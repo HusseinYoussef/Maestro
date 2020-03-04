@@ -33,14 +33,54 @@ def calc_time(nfft, n_samples, nhop, rate):
     time = np.arange(nfft/2, n_samples - nfft/2 + 1, nhop) / float(rate)
     return time
 
-def draw_stft(freq, time, stft):
+def draw_specgram(stft):
+    """Draw Spectrogram using stft"""
 
-    if len(stft.shape == 3):
+    # Dim: (freq_bins, n_frames)
+    if len(stft.shape) == 3:
         stft = stft[0]
 
-    plt.pcolormesh(time, freq, np.abs(stft), cmap=plt.cm.afmhot)
-    plt.title('STFT Magnitude')
-    plt.ylabel('Frequency [Hz]')
-    plt.xlabel('Time [sec]')
-    plt.show()
+
+    # plt.pcolormesh(time, freq, np.abs(stft), cmap=plt.cm.afmhot)
+    # plt.title('STFT Magnitude')
+    # plt.ylabel('Frequency [Hz]')
+    # plt.xlabel('Time [sec]')
+    # plt.show()
+    breakpoint()
+    
+    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(20, 4))
+    cax = ax.matshow(
+        np.abs(stft),
+        interpolation="nearest",
+        aspect="auto",
+        cmap=plt.cm.afmhot,
+        origin="lower",
+    )
+    fig.colorbar(cax)
+    plt.title("Original Spectrogram")
+    # plt.show()
+
+def pretty_spectrogram(stft, log=True, thresh=4):
+    
+    specgram = np.abs(stft)
+    if len(specgram.shape) == 3:
+        specgram = specgram[0]
+    if log == True:
+        specgram /= specgram.max()  # volume normalize to max 1
+        specgram = np.log10(specgram)  # take log
+        specgram[specgram < -thresh] = -thresh  # set anything less than the threshold as the threshold
+    else:
+        specgram[specgram < thresh] = thresh  # set anything less than the threshold as the threshold
+
+    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(20, 4))
+    cax = ax.matshow(
+        specgram,
+        interpolation="nearest",
+        aspect="auto",
+        cmap=plt.cm.afmhot,
+        origin="lower",
+    )
+    fig.colorbar(cax)
+    plt.title("Pretty Spectrogram")
+    # plt.show()
 

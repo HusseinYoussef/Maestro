@@ -21,16 +21,16 @@ def audio_info(audio_path):
         'duration' : duration
     }
 
-def calc_freq(nfft, rate):
+def calc_freq(frame_length, rate):
     """Function to calculate the frequencies"""
     
-    freq = np.fft.rfftfreq(nfft, 1/rate)
+    freq = np.fft.rfftfreq(frame_length, 1/rate)
     return freq
 
-def calc_time(nfft, n_samples, nhop, rate):
+def calc_time(frame_length, n_samples, frame_step, rate):
     """Function to calculate the time of each frame (mid-point)"""
 
-    time = np.arange(nfft/2, n_samples - nfft/2 + 1, nhop) / float(rate)
+    time = np.arange(frame_length/2, n_samples - frame_length/2 + 1, frame_step) / float(rate)
     return time
 
 def draw_specgram(stft):
@@ -39,7 +39,6 @@ def draw_specgram(stft):
     # Dim: (freq_bins, n_frames)
     if len(stft.shape) == 3:
         stft = stft[0]
-
 
     # plt.pcolormesh(time, freq, np.abs(stft), cmap=plt.cm.afmhot)
     # plt.title('STFT Magnitude')
@@ -67,7 +66,7 @@ def pretty_spectrogram(stft, log=True, thresh=4):
         specgram = specgram[0]
     if log == True:
         specgram /= specgram.max()  # volume normalize to max 1
-        specgram = np.log10(specgram)  # take log
+        specgram = np.log10(specgram)
         specgram[specgram < -thresh] = -thresh  # set anything less than the threshold as the threshold
     else:
         specgram[specgram < thresh] = thresh  # set anything less than the threshold as the threshold

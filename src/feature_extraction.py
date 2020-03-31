@@ -3,7 +3,7 @@ import soundfile as sf
 from scipy import signal
 from utils import draw_specgram, calc_freq, calc_time, pretty_spectrogram
 import matplotlib.pyplot as plt
-import python_speech_features
+from utils import audio_loader
 
 # TODO Support Boundry
 class STFT:
@@ -14,6 +14,12 @@ class STFT:
         self.padding = padding
         self.window = signal.get_window('hann', self.frame_length)
         self.scale = np.sqrt(1 / self.window.sum()**2)
+
+    def __str__(self):
+        
+        print(f'n_fft: {self.frame_length}')
+        print(f'n_hop: {self.frame_step}')
+        return ""
 
     def __call__(self, audio, rate=44100):
         """
@@ -55,6 +61,7 @@ class STFT:
             else:
                 frames = np.array([sample[0][indices.astype(np.int32, copy=False)]])
 
+            breakpoint()
             frames = self.window * frames
 
             # frame.shape -> (n_frames, frame_length)
@@ -81,8 +88,7 @@ class Spectrogram:
 
     def __call__(self, stft):
         """
-        Input  dims: (batch_size, n_channels, freq_bins, n_frames)
-        Output dims: (batch_size, n_frames, n_channesl, freq_bins)
+        I/O dims: (batch_size, n_channels, freq_bins, n_frames)
         """
 
         # Magnitude
@@ -96,21 +102,16 @@ class Spectrogram:
 
 if __name__ == "__main__":
 
-    data, rate = sf.read('F:/CMP 2020/GP/src/tst.wav')
-    if len(data.shape) == 1:
-        data = np.reshape(data, (1,-1))
-        # data = np.tile(data, (2, 1))
-        # data[1] *= 5
-    else:
-        data = data.T
+    data, rate = audio_loader('F:/CMP 2020/GP/Datasets/Maestro/train/A Classic Education - NightOwl/drums.wav')
 
-    # data = data[:, :4*rate]
-    # sam = [data1, data1]
-    # sam = np.array(sam)
+    breakpoint()
+    data = data[:, :4*rate]
+    sam = [data, data]
+    sam = np.array(sam)
 
-    # breakpoint()
-    # obj = STFT()
-    # freq, time, res = obj(sam)
+    breakpoint()
+    obj = STFT()
+    freq, time, res = obj(sam)
 
     ff = calc_freq(4096, rate)
     breakpoint()

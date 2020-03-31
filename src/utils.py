@@ -5,22 +5,40 @@ import numpy as np
 from scipy import signal
 
 def audio_info(audio_path):
-    """Function to retrieve the info of an audio file"""
+    """Function to return the info of an audio file without reading the file"""
     
-    data, rate = sf.read(audio_path)
-
-    fname = os.path.basename(audio_path).split('.')[0]
-    samples = data.shape[0]
-    duration = data.shape[0] // rate
-    channels = data.shape[1]
+    info = sf.info(audio_path)
 
     return {
-        'name' : fname,
-        'n_samples' : samples,
-        'n_channels' : channels,
-        'duration' : duration
+        'rate': info.samplerate,
+        'samples' : int(info.duration*info.samplerate),
+        'channels' : info.channels,
+        'duration' : info.duration
     }
 
+def audio_loader(audio_path, start=0, dur=None):
+    """Read audio file"""
+
+    info = audio_info(audio_path)
+    if dur:
+        stop = start + int(dur * info['rate'])
+    else:
+        # Read Full file
+        stop = None
+
+    audio, rate = sf.read(audio_path, start=start, stop=stop, always_2d=True)
+
+    # shape (channels, samples)
+    return audio.T, rate
+
+def freq_to_bin(max_freq, rate, n_fft):
+    """Convert from max_freq to freq_bin"""
+    
+    bin_width = rate / n_fft
+    max_bin = int(max_freq / bin_width) + 1
+
+    return max_bin
+    
 def calc_freq(frame_length, rate):
     """Function to calculate the frequencies"""
     

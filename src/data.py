@@ -99,7 +99,7 @@ class Dataset(torch.utils.data.Dataset):
         target_audio, _ = audio_loader(target_path, start=start, dur=self.seq_duration)
 
         target_audio = self.transformation(target_audio)
-        track_sources.append(torch.from_numpy(target_audio).float())
+        track_sources.append(torch.Tensor(target_audio))
 
         for source in self.sources:
             if source != self.target:
@@ -120,7 +120,7 @@ class Dataset(torch.utils.data.Dataset):
                 source_audio, _ = audio_loader(source_path, start=start, dur=self.seq_duration)
                 source_audio = self.transformation(source_audio)
 
-                track_sources.append(torch.from_numpy(target_audio).float())
+                track_sources.append(torch.Tensor(source_audio))
 
         stems = torch.stack(track_sources)
         

@@ -10,7 +10,7 @@ def audio_info(audio_path):
     info = sf.info(audio_path)
 
     return {
-        'rate': info.samplerate,
+        'samplerate': info.samplerate,
         'samples' : int(info.duration*info.samplerate),
         'channels' : info.channels,
         'duration' : info.duration
@@ -20,8 +20,9 @@ def audio_loader(audio_path, start=0, dur=None):
     """Read audio file"""
 
     info = audio_info(audio_path)
+    start = int(start * info['samplerate'])
     if dur:
-        stop = start + int(dur * info['rate'])
+        stop = start + int(dur * info['samplerate'])
     else:
         # Read Full file
         stop = None

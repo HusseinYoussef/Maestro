@@ -6,6 +6,7 @@ import os
 import torch
 from glob import glob
 from utils import audio_info, audio_loader
+from tqdm import tqdm
 
 class Transform:
 
@@ -18,17 +19,16 @@ class Transform:
         return audio
 
 
-def gain(self, audio, low=0.25, high=1.25):
+def gain(audio, low=0.25, high=1.25):
     """Apply random gain to the signal between low and high"""
     g = low + np.random.rand() * (high-low)
     return audio * g
 
-def channel_swap(self, audio):
+def channel_swap(audio):
     """Swap channels of stereo audio with a probabilty of 0.5"""
     if audio.shape[0] == 2 and np.random.rand() >= 0.5:
         audio[[0,1]] = audio[[1,0]]
-    else:
-        return audio
+    return audio
 
 
 def load_dataset(root, target='vocals', seq_duration=5, augmentation=['gain', 'channel_swap']):
@@ -64,8 +64,9 @@ class Dataset(torch.utils.data.Dataset):
         root:str,
         split='train',
         target='vocals',
+        samplerate=44100,
         transformation=lambda audio: audio,
-        samples_per_track=1,
+        samples_per_track=64,
         seq_duration=5,
         random_chunk=False,
         random_mix=False
@@ -75,6 +76,7 @@ class Dataset(torch.utils.data.Dataset):
         self.root = root
         self.split = split
         self.target = target
+        self.samplerate = samplerate
         self.sources = ['vocals', 'drums', 'bass', 'other']
         self.transformation = transformation
         self.samples_per_track = samples_per_track
@@ -97,7 +99,7 @@ class Dataset(torch.utils.data.Dataset):
         target_audio, _ = audio_loader(target_path, start=start, dur=self.seq_duration)
 
         target_audio = self.transformation(target_audio)
-        track_sources.append(torch.Tensor(target_audio))
+        track_sources.append(torch.from_numpy(target_audio).float())
 
         for source in self.sources:
             if source != self.target:
@@ -118,7 +120,7 @@ class Dataset(torch.utils.data.Dataset):
                 source_audio, _ = audio_loader(source_path, start=start, dur=self.seq_duration)
                 source_audio = self.transformation(source_audio)
 
-                track_sources.append(torch.Tensor(source_audio))
+                track_sources.append(torch.from_numpy(target_audio).float())
 
         stems = torch.stack(track_sources)
         
@@ -130,12 +132,12 @@ class Dataset(torch.utils.data.Dataset):
         return x, y
 
     def __len__(self):
-        return len(self.tracks)
+        return len(self.tracks)*self.samples_per_track
     
     def __str__(self):
         print(f'Target = {self.target}')
         print(f'samples per track = {self.samples_per_track}')
-        print(f'Length = {len(self.tracks)}')
+        print(f'Length = {len(self)}')
         return ""
         
     def get_tracks(self):
@@ -164,16 +166,34 @@ class Dataset(torch.utils.data.Dataset):
 
 if __name__ == "__main__":
 
-    # sum = 0
-    # c = 0
-    # mus = musdb.DB(root="F:/CMP 2020/GP/musdb18", split="valid", subsets='train')
-    # lis = []
-    # for track in mus:
-        
-    #     lis.append(track.duration)
-    #     c += 1
-    #     sum += track.duration
+    parser = argparse.ArgumentParser(description='Training')
 
-    dataset = Dataset(root='F:/CMP 2020/GP/Datasets/Maestro', target='drums')
-    # breakpoint()
-    # dataset.get_tracks()
+    parser.add_argument('--target', type=str, default='vocals',
+                        help='target source')
+
+    parser.add_argument('--root', type=str, required=True, 
+                            help='root to dataset directory')
+    parser.add_argument('--output', type=str, default="open-unmix",
+                        help='provide output path base folder name')
+                        
+    parser.add_argument('--batch-size', type=int, default=16,
+                            help='number of batches')
+    
+    # Model Parameters
+    parser.add_argument('--seq-duration', type=int, default=5,
+                            help='duration of samples')
+    args, _ = parser.parse_known_args()
+    
+    train_dataset, valid_dataset = load_dataset(root=args.root, target=args.target, seq_duration=args.seq_duration)
+
+    total_training_duration = 0
+    for k in tqdm(range(len(train_dataset))):
+        x, y = train_dataset[k]
+        total_training_duration += x.shape[1] / train_dataset.samplerate
+    
+    train_sampler = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+
+    for x, y in tqdm(train_sampler):
+        # x, y shape (batch_size, channels, samples)
+        pass
+    breakpoint()

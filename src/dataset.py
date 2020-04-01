@@ -7,7 +7,10 @@ from tqdm import tqdm
 from glob import glob
 
 
-def musdb_parser(root_path, dest_path, seq_duration=None):
+def musdb_parser(args):
+
+    root_path = args.root
+    dest_path = args.dest
 
     validation_tracks = [
         'Actions - One Minute Smile',
@@ -45,7 +48,12 @@ def musdb_parser(root_path, dest_path, seq_duration=None):
                     print(f'\nProcessing {split} files')
                     files = glob(f'{root_path}/{split}/*.mp4')
                     
-                    for track_path in tqdm(files[:3], total=len(files)):
+                    if args.n:
+                        n_tracks = min(len(files), args.n)
+                    else:
+                        n_tracks = len(files)
+
+                    for track_path in tqdm(files[:n_tracks], total=n_tracks):
 
                         filename = os.path.basename(track_path)
                         
@@ -69,7 +77,10 @@ def musdb_parser(root_path, dest_path, seq_duration=None):
                             sf.write(f'{track_dir}/{stem}.wav', signal[idx], rate)
                         fo.write(f'{fname},{duration}\n')
 
-def ccmixter_parser(root_path, dest_path):
+def ccmixter_parser(args):
+
+    root_path = args.root
+    dest_path = args.dest
 
     if not(os.path.exists(f'{dest_path}/ccmixter')):
         os.mkdir(f'{dest_path}/ccmixter')
@@ -81,8 +92,16 @@ def ccmixter_parser(root_path, dest_path):
         with open(f'{dest_path}/ccmixter/train.csv', 'w') as fo:
             
             fo.write('fname,duration\n')
-            for directory in tqdm(dirs[:3], total=len(dirs)):
+            if args.n:
+                n_tracks = min(len(dirs), args.n)
+            else:
+                n_tracks = len(dirs)
 
+            for directory in tqdm(dirs[:n_tracks], total=n_tracks):
+
+                if not os.path.isdir(directory):
+                    continue
+                
                 fname = os.path.basename(directory)
                 track_dir = f'{dest_path}/ccmixter/train/{fname}'
                 os.mkdir(track_dir)
@@ -106,7 +125,7 @@ def sampling(root_path, seq_duration=None):
 
     datasets = ['musdb18', 'ccmixter']
     sources = ['vocals', 'drums', 'bass', 'other', 'mixture']
-    breakpoint()
+    # breakpoint()
     for split in ['train', 'valid']:
         for dataset in datasets:
 
@@ -151,6 +170,10 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        '--n', type=int, default=3, help='number of tracks of each dataset, 0 for all tracks'
+    )
+
+    parser.add_argument(
         '--root', type=str, required=True ,help='root path of dataset'
     )
 
@@ -160,9 +183,9 @@ if __name__ == "__main__":
 
     args, _ = parser.parse_known_args()
 
-    # if args.name == 'musdb18':
-    #     musdb_parser(args.root, args.dest)
-    # elif args.name == 'ccmixter':
-    #     ccmixter_parser(args.root, args.dest)
-    
-    sampling('F:\CMP 2020\GP\Datasets')
+    if args.name == 'musdb18':
+        musdb_parser(args)
+    elif args.name == 'ccmixter':
+        ccmixter_parser(args)
+    elif args.name == 'maestro':
+        sampling(args.dest)

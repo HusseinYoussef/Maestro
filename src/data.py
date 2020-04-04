@@ -85,7 +85,7 @@ class Dataset(torch.utils.data.Dataset):
         self.random_mix = random_mix
         self.tracks = self.get_tracks()
 
-    def __getitem__(self, index) -> Tensor : 
+    def __getitem__(self, index) -> torch.tensor: 
         
         track_sources = []
         track = self.tracks[index // self.samples_per_track]

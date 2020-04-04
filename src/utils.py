@@ -1,4 +1,5 @@
 import os
+import torch
 import soundfile as sf
 import matplotlib.pyplot as plt
 import numpy as np
@@ -31,6 +32,16 @@ def audio_loader(audio_path, start=0, dur=None):
 
     # shape (channels, samples)
     return audio.T, rate
+
+def save_checkpoint(checkpoint_dict:dict, best:bool, target:str, path:str):
+    """Save model checkpoint in the output folder"""
+    
+    # Save only weights of the model
+    if best:
+        torch.save(checkpoint_dict['model_state'], os.path.join(path, target+'.pth'))
+
+    #Save full checkpoint to resume training
+    torch.save(checkpoint_dict, os.path.join(path, target+'.chkpnt'))
 
 def freq_to_bin(max_freq, rate, n_fft):
     """Convert from max_freq to freq_bin"""

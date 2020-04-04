@@ -4,6 +4,7 @@ from torchsummary import summary
 import argparse
 import numpy as np
 import tqdm
+import json
 from data import load_dataset, Dataset
 import copy
 import random
@@ -11,7 +12,6 @@ import sklearn.preprocessing
 from featurizer import STFT, Spectrogram
 from utils import save_checkpoint
 from model import UMX
-
 
 def train(device, model, train_sampler, optimizer) -> float:
     """Train an Epoch and return the average loss"""
@@ -135,20 +135,20 @@ if __name__ == "__main__":
 
     parser.add_argument('--target', type=str, default='vocals',
                         help='target source')
+    parser.add_argument('--verpose', type=bool, default=False, 
+                        help='print optional description')
 
     # Dataset Parameters
     parser.add_argument('--root', type=str, required=True, 
-                            help='root to dataset directory')
-    parser.add_argument('--verpose', type=bool, default=False, 
-                            help='print optional description')
+                        help='root to dataset directory')
     parser.add_argument('--output', type=str, default="open-unmix",
                         help='provide output path folder name')
                         
     # Training Parameters
     parser.add_argument('--epochs', type=int, default=10,
-                            help='number of epochs')
+                        help='number of epochs')
     parser.add_argument('--batch-size', type=int, default=16,
-                            help='number of batches')
+                        help='number of batches')
     parser.add_argument('--lr', type=float, default=0.001,
                         help='learning rate, defaults to 1e-3')
     parser.add_argument('--lr-decay-factor', type=float, default=0.3,
@@ -161,20 +161,22 @@ if __name__ == "__main__":
                         help='random seed (default: 42)')
 
     # Model Parameters
+    parser.add_argument('--model', type=str,
+                        help='path to a model checkpoint')
     parser.add_argument('--seq-duration', type=int, default=5,
-                            help='duration of samples')
+                        help='duration of samples')
     parser.add_argument('--frame-length', type=int, default=4096,
-                            help='length of the frame in samples')
+                        help='length of the frame in samples')
     parser.add_argument('--frame-step', type=int, default=1024,
-                            help='length of frame hop in samples')
+                        help='length of frame hop in samples')
     parser.add_argument('--hidden-size', type=int, default=512,
                         help='hidden size parameter of layers')
     parser.add_argument('--bandwidth', type=int, default=16000,
                         help='maximum model bandwidth in hertz(Hz)')
     parser.add_argument('--channels', type=int, default=2,
-                            help='number of channels')
+                        help='number of channels')
     parser.add_argument('--output-norm', type=bool, default=False,
-                            help='apply output normalization')
+                        help='apply output normalization')
     parser.add_argument('--workers', type=int, default=0,
                         help='Number of workers for dataloader.')
 
@@ -188,6 +190,9 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     random.seed(args.seed)
     
+    if not os.path.exists(args.output):
+        os.mkdir(args.output)
+
     train_dataset, valid_dataset = load_dataset(root=args.root, target=args.target, seq_duration=args.seq_duration)
 
     train_sampler = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
@@ -223,11 +228,31 @@ if __name__ == "__main__":
     )
 
     # Add option to resume training from a checkpoint
-    pbar = tqdm.trange(1, args.epochs+1)
-    train_losses = []
-    valid_losses = []
-    best_loss = None
-    best_epoch = None
+    if args.model:
+
+        with open(os.path.join(args.model, args.target+'_params.json'), 'r') as fin:
+            res = json.load(fin)
+        # Load Checkpoint
+        checkpoint_dict = torch.load(os.path.join(args.model, args.target+'.chkpnt'), map_location=device)
+
+        # Load Model and optimizer parameters
+        unmix.load_state_dict(checkpoint_dict['model_state'])
+        optimizer.load_state_dict(checkpoint_dict['optimitzer_state'])
+        scheduler.load_state_dict(checkpoint_dict['scheduler_state'])
+        
+        # Train starting from the last epoch 
+        pbar = tqdm.trange(checkpoint_dict['epoch'], checkpoint_dict['epoch']+args.epochs)
+        train_losses = res['train_losses']
+        valid_losses = res['valid_losses']
+        best_loss = res['best_loss']
+        best_epoch = res['best_epoch']
+    else:
+        pbar = tqdm.trange(1, args.epochs+1)
+        train_losses = []
+        valid_losses = []
+        best_loss = None
+        best_epoch = None
+    
     for epoch in pbar:
         
         pbar.set_description('Training Epoch')
@@ -244,20 +269,23 @@ if __name__ == "__main__":
 
         if best_loss == None:
             best_loss = valid_loss
-        if valid_loss > best_loss:
+        # Best epoch is whose loss is lower than best loss
+        if valid_loss < best_loss:
             best_loss = valid_loss
             best_epoch = epoch
 
         checkpoint_dict = {
             'epoch': epoch+1,
             'best_loss': best_loss,
+            'epoch_loss': valid_loss,
             'model_state': unmix.state_dict(),
             'optimizer_state': optimizer.state_dict(),
             'scheduler_state': scheduler.state_dict()
         }
 
         # Save current checkpoint
-        save_checkpoint(checkpoint_dict=checkpoint_dict,
+        save_checkpoint(
+            checkpoint_dict=checkpoint_dict,
             best=valid_loss==best_loss,
             target=args.target,
             path=args.output
@@ -265,11 +293,14 @@ if __name__ == "__main__":
 
         # Current results
         params = {
-            'epoch_trained': epoch,
-            'best_loss': best_loss,
+            'epochs_trained': epoch,
             'best_epoch': best_epoch,
+            'best_loss': best_loss,
             'train_losses': train_losses,
             'valid_losses': valid_losses
         }
+
+        with open(os.path.join(args.output, args.target+'_params.json'), 'w') as of:
+            of.write(json.dumps(params))
 
     breakpoint()

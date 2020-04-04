@@ -21,7 +21,7 @@ class STFT:
         print(f'n_hop: {self.frame_step}')
         return ""
 
-    def __call__(self, audio, rate=44100):
+    def __call__(self, audio):
         """
         Input  dims: (batch_size, n_channels, samples)
         Output dims: (batch_size, n_channels, freq_bins, n_frames)
@@ -61,7 +61,7 @@ class STFT:
             else:
                 frames = np.array([sample[0][indices.astype(np.int32, copy=False)]])
 
-            breakpoint()
+            # breakpoint()
             frames = self.window * frames
 
             # frame.shape -> (n_frames, frame_length)
@@ -76,9 +76,10 @@ class STFT:
         stft = np.transpose(stft, (0, 1, 3, 2))
 
         # 1 sec -> rate, ? sec -> sample  tarfeen f wasteen
-        time = calc_time(frame_length=self.frame_length, n_samples=audio.shape[-1], frame_step=self.frame_step, rate=rate)
-        freq = calc_freq(frame_length=self.frame_length, rate=rate)
-        return freq, time, stft
+        # time = calc_time(frame_length=self.frame_length, n_samples=audio.shape[-1], frame_step=self.frame_step, rate=rate)
+        # freq = calc_freq(frame_length=self.frame_length, rate=rate)
+        # return freq, time, stft
+        return stft
 
 class Spectrogram:
 
@@ -111,19 +112,19 @@ if __name__ == "__main__":
 
     breakpoint()
     obj = STFT()
-    freq, time, res = obj(sam)
+    res = obj(sam)
 
     ff = calc_freq(4096, rate)
     breakpoint()
     f, t, zxx = signal.stft(data, fs=rate, window='hann', nperseg=2048, noverlap=2048-128,boundary=None)
-    draw_specgram(zxx)
-    pretty_spectrogram(zxx)
+    # draw_specgram(zxx)
+    pretty_spectrogram(res)
     # f, t, Sxx = signal.spectrogram(data, rate, nperseg=4096, noverlap=4096-1024)
-    if zxx.shape[0] == 2:
-        f2 = plt.figure(2)
-        plt.pcolormesh(t, f, np.abs(zxx), cmap=plt.cm.afmhot)
-        plt.title('STFT Magnitudesci')
-        plt.ylabel('Frequency [Hz]')
-        plt.xlabel('Time [sec]')
+    # if zxx.shape[0] == 2:
+    #     f2 = plt.figure(2)
+    #     plt.pcolormesh(t, f, np.abs(zxx), cmap=plt.cm.afmhot)
+    #     plt.title('STFT Magnitudesci')
+    #     plt.ylabel('Frequency [Hz]')
+    #     plt.xlabel('Time [sec]')
     plt.show()
 

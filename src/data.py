@@ -85,7 +85,7 @@ class Dataset(torch.utils.data.Dataset):
         self.random_mix = random_mix
         self.tracks = self.get_tracks()
 
-    def __getitem__(self, index):
+    def __getitem__(self, index) -> Tensor : 
         
         track_sources = []
         track = self.tracks[index // self.samples_per_track]
@@ -140,7 +140,7 @@ class Dataset(torch.utils.data.Dataset):
         print(f'Length = {len(self)}')
         return ""
         
-    def get_tracks(self):
+    def get_tracks(self) -> list:
 
         path = f'{self.root}/{self.split}/*'
         dirs = glob(path)

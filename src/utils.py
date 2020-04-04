@@ -83,6 +83,8 @@ def pretty_spectrogram(stft, log=True, thresh=4):
     specgram = np.abs(stft)
     if len(specgram.shape) == 3:
         specgram = specgram[0]
+    if len(specgram.shape) == 4:
+        specgram = specgram[0][0]
     if log == True:
         specgram /= specgram.max()  # volume normalize to max 1
         specgram = np.log10(specgram)

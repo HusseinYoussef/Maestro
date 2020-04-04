@@ -112,7 +112,7 @@ def ccmixter_parser(args):
                 for idx, stem in enumerate(stems):
                     signal, rate = sf.read(files[idx])
                     duration = signal.shape[0]//rate
-                    shutil.move(files[idx], f'{track_dir}/{stem}.wav')
+                    shutil.copy(files[idx], f'{track_dir}/{stem}.wav')
                 fo.write(f'{fname},{duration}\n')
 
 

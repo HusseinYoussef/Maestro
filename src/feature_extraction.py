@@ -3,7 +3,6 @@ import soundfile as sf
 from scipy import signal
 from utils import draw_specgram, calc_freq, calc_time, pretty_spectrogram
 import matplotlib.pyplot as plt
-import python_speech_features
 
 # TODO Support Boundry
 class STFT:

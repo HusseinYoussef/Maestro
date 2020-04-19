@@ -45,7 +45,7 @@ def musdb_parser(args):
                 if not(os.path.exists(split_path)):
                     
                     os.mkdir(split_path)
-                    print(f'\nProcessing {split} files')
+                    # print(f'\nProcessing {split} files')
                     files = glob(f'{root_path}/{split}/*.mp4')
                     
                     if args.n:
@@ -115,15 +115,46 @@ def ccmixter_parser(args):
                     shutil.copy(files[idx], f'{track_dir}/{stem}.wav')
                 fo.write(f'{fname},{duration}\n')
 
+def HHDS_parser(args):
 
-def sampling(root_path, seq_duration=None):
+    root_path = args.root
+    dest_path = args.dest
+
+    duplicates = [
+        '001 - ANiMAL - Clinic A',
+        '002 - ANiMAL - Rockshow',
+        '052 - ANiMAL - Easy Tiger'
+    ]
+
+    if not os.path.exists(f'{dest_path}/HHDS'):
+        os.mkdir(f'{dest_path}/HHDS')
+        os.mkdir(f'{dest_path}/HHDS/train')
+        os.mkdir(f'{dest_path}/HHDS/valid')
+
+        for split, dest_split in zip(['Dev', 'Test'], ['train', 'valid']):
+            for folder in ['Mixtures', 'Sources']:
+                
+                dirs = glob(f'{root_path}/{folder}/{split}/*')
+                for track_dir in tqdm(dirs, desc=f'{folder} files'):
+
+                    fname = os.path.basename(track_dir)
+                    if fname in duplicates:
+                        continue
+                    if not os.path.exists(f'{dest_path}/HHDS/{dest_split}/{fname}'):
+                        os.mkdir(f'{dest_path}/HHDS/{dest_split}/{fname}')
+                    
+                    files = glob(f'{track_dir}/*.wav')
+                    for track in files:
+                        shutil.copy(track, f'{dest_path}/HHDS/{dest_split}/{fname}')
+
+def sampling(root_path, datasets, seq_duration=None):
 
     if not os.path.exists(f'{root_path}/Maestro'):
         os.mkdir(f'{root_path}/Maestro')
         os.mkdir(f'{root_path}/Maestro/train')
         os.mkdir(f'{root_path}/Maestro/valid')
 
-    datasets = ['musdb18', 'ccmixter']
+    # datasets = ['musdb18', 'ccmixter', 'HHDS']
     sources = ['vocals', 'drums', 'bass', 'other', 'mixture']
     # breakpoint()
     for split in ['train', 'valid']:
@@ -181,11 +212,16 @@ if __name__ == "__main__":
         '--dest', type=str, required=True, help='destination path of dataset'
     )
 
+    parser.add_argument('--datasets', nargs='+', help='datasets'
+    )
+
     args, _ = parser.parse_known_args()
 
     if args.name == 'musdb18':
         musdb_parser(args)
     elif args.name == 'ccmixter':
         ccmixter_parser(args)
+    elif args.name == 'HHDS':
+        HHDS_parser(args)
     elif args.name == 'maestro':
-        sampling(args.dest)
+        sampling(args.dest, args.datasets)

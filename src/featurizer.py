@@ -4,16 +4,30 @@ from scipy import signal
 from utils import draw_specgram, calc_freq, calc_time, pretty_spectrogram
 import matplotlib.pyplot as plt
 from utils import audio_loader
+import torch
+import librosa
 
 # TODO Support Boundry
 class STFT:
 
-    def __init__(self, frame_length=4096, frame_step=1024, padding=True):
+    def __init__(
+        self,
+        frame_length=4096,
+        frame_step=1024,
+        padding=False,
+        center=False,
+        pad_mode='reflect',
+        scale=False
+    ):
         self.frame_length = frame_length
         self.frame_step = frame_step
         self.padding = padding
+        self.center = center
+        self.pad_mode = pad_mode
         self.window = signal.get_window('hann', self.frame_length)
-        self.scale = np.sqrt(1 / self.window.sum()**2)
+        self.scale = 1
+        if scale:
+            self.scale = np.sqrt(1 / self.window.sum()**2)
 
     def __str__(self):
         
@@ -29,23 +43,35 @@ class STFT:
 
         batch_size, n_channels, signal_length = audio.shape
 
+        assert signal_length > self.frame_length, 'Audio is too short'
+
         # n_frames = ceil((signal_length - frame_length)/step_size)+1
-        if self.padding:
+        if self.center:
+            n_frames = int(np.ceil(signal_length / self.frame_step))
+        elif self.padding:
             n_frames = int(np.ceil(float(np.abs(signal_length - self.frame_length)) / self.frame_step) + 1)
         else:
-            n_frames = np.abs(signal_length - self.frame_length) // self.frame_step + 1
-        if signal_length < self.frame_length:
-            n_frames = 1
+            n_frames = int(np.abs(signal_length - self.frame_length) // self.frame_step + 1)
 
-        assert n_frames >= 1, 'Invalid number of frames'
-
+        # Pad siganl with reflection on each side
+        if self.center:
+            new_batch = []
+            for sample in range(batch_size):
+                new_sample = []
+                for ch in range(n_channels):
+                    new_sample.append(np.pad(audio[sample][ch],
+                                    pad_width=int(self.frame_length // 2), mode=self.pad_mode)) 
+            
+                new_batch.append(np.stack(new_sample, axis=0))
+            audio = np.stack(new_batch, axis=0)
+            
         # Pad signal with zeros to produce integer number of frames
-        if self.padding:
+        elif self.padding:
             pad_signal_length = (n_frames-1) * self.frame_step + self.frame_length
 
             assert pad_signal_length >= signal_length, 'Invalid Padding'
 
-            z = np.zeros((audio.shape[0], audio.shape[1], pad_signal_length-signal_length))
+            z = torch.zeros((audio.shape[0], audio.shape[1], pad_signal_length-signal_length))
             audio = np.append(audio, z, axis=2)
 
         indices = np.tile(np.arange(0, self.frame_length), (n_frames, 1)) \
@@ -55,8 +81,8 @@ class STFT:
         for sample in audio:
             # Sterro
             if n_channels == 2:
-                frames = np.array([sample[0][indices.astype(np.int32, copy=False)],
-                                    sample[1][indices.astype(np.int32, copy=False)]])
+                frames = np.stack((sample[0][indices.astype(np.int32, copy=False)],
+                                    sample[1][indices.astype(np.int32, copy=False)]), axis=0)
             # Mono
             else:
                 frames = np.array([sample[0][indices.astype(np.int32, copy=False)]])
@@ -64,59 +90,93 @@ class STFT:
             # breakpoint()
             frames = self.window * frames
 
-            # frame.shape -> (n_frames, frame_length)
+            # frames.shape -> (n_channels, n_frames, frame_length)
             samples_frames.append(frames)
 
         # batch_size, channels, n_frames, frame_length
         samples_frames = np.array(samples_frames)
         
-        stft = np.fft.rfft(samples_frames, self.frame_length) * self.scale
+        # stft = np.fft.rfft(samples_frames, self.frame_length) * self.scale
         
         # swap frames and bins to ease drawing
-        stft = np.transpose(stft, (0, 1, 3, 2))
+        # stft = np.transpose(stft, (0, 1, 3, 2))
 
-        # 1 sec -> rate, ? sec -> sample  tarfeen f wasteen
-        # time = calc_time(frame_length=self.frame_length, n_samples=audio.shape[-1], frame_step=self.frame_step, rate=rate)
-        # freq = calc_freq(frame_length=self.frame_length, rate=rate)
-        # return freq, time, stft
-        return stft
+        return np.transpose(np.fft.rfft(samples_frames, self.frame_length) * self.scale, (0, 1, 3, 2))
 
 class Spectrogram:
 
-    def __init__(self, mono=False):
+    def __init__(self, mono=False, log=False):
         """Convert channels to mono if True"""        
         self.mono = mono
+        self.log = log
 
     def __call__(self, stft):
         """
         I/O dims: (batch_size, n_channels, freq_bins, n_frames)
         """
-
         # Magnitude
         specgram = np.abs(stft)
 
         if self.mono:
             specgram = np.mean(specgram, axis=1, keepdims=True)
+        if self.log:
+            specgram = np.log10(specgram)
 
         return specgram
 
 
 if __name__ == "__main__":
 
-    data, rate = audio_loader('F:/CMP 2020/GP/Datasets/Maestro/train/A Classic Education - NightOwl/drums.wav')
+    sources = []
+    data, rate = audio_loader('F:/CMP 2020/GP/Datasets/musdb18/valid/ANiMAL - Rockshow/vocals.wav')
+    data = data[:, 40*rate:60*rate]
+    # sources.append(torch.from_numpy(data).float())
+    # data, rate = audio_loader('F:/CMP 2020/GP/Datasets/musdb18/valid/ANiMAL - Rockshow/drums.wav')
+    # # data = data[:, 40*rate:60*rate]
+    # sources.append(torch.from_numpy(data).float())
+    # data, rate = audio_loader('F:/CMP 2020/GP/Datasets/musdb18/valid/ANiMAL - Rockshow/bass.wav')
+    # # data = data[:, 40*rate:60*rate]
+    # sources.append(torch.from_numpy(data).float())
+    # data, rate = audio_loader('F:/CMP 2020/GP/Datasets/musdb18/valid/ANiMAL - Rockshow/other.wav')
+    # # data = data[:, 40*rate:60*rate]
+    # sources.append(torch.from_numpy(data).float())
+    # mixture, rate = audio_loader('F:/CMP 2020/GP/Datasets/musdb18/valid/ANiMAL - Rockshow/mixture.wav')
+    # mixture = torch.from_numpy(mixture).float()
 
+    # mix = torch.stack(sources, dim=0).sum(0)
+    # er = torch.nn.functional.mse_loss(mixture, mix)
+    data = data[:,:5000]
     breakpoint()
-    data = data[:, :4*rate]
     sam = [data, data]
     sam = np.array(sam)
 
-    breakpoint()
-    obj = STFT()
-    res = obj(sam)
+    obj = STFT(center=True)
+    sam = data[None, ...]
+    res = np.squeeze(obj(sam))
 
-    ff = calc_freq(4096, rate)
+    import umx
+    unmix = umx.OpenUnmix(
+            input_mean=None,
+            input_scale=None,
+            nb_channels=2,
+            hidden_size=512,
+            n_fft=4096,
+            n_hop=1024,
+            max_bin=1487,
+            sample_rate=44100
+    )
+    unmix.stft.center = True
+    # breakpoint()
+    # ff = calc_freq(4096, rate)
+    ch1 = np.squeeze(data[0])
+    ch2 = np.squeeze(data[1])
+    lib1 = librosa.stft(np.asfortranarray(ch1), n_fft=4096, hop_length=1024, center=True)
+    lib2 = librosa.stft(np.asfortranarray(ch2), n_fft=4096, hop_length=1024, center=True)
+    lib = np.stack((lib1, lib2), axis=0)
+    tor = unmix.transform(torch.from_numpy(sam).float()).permute(1, 2, 3, 0)
     breakpoint()
-    f, t, zxx = signal.stft(data, fs=rate, window='hann', nperseg=2048, noverlap=2048-128,boundary=None)
+    er = torch.nn.functional.mse_loss(torch.from_numpy(np.abs(res)).float(), torch.from_numpy(np.abs(lib)).float())
+    f, t, zxx = signal.stft(data, fs=rate, window='hann', nperseg=4096, noverlap=4096-1024,boundary=None)
     # draw_specgram(zxx)
     pretty_spectrogram(res)
     # f, t, Sxx = signal.spectrogram(data, rate, nperseg=4096, noverlap=4096-1024)

@@ -58,7 +58,6 @@ class MMDenseNetLSTM:
         y = squeeze(y, axis=3)
         
         lstm = tf.keras.layers.LSTM(units=hidden_units, return_sequences=True)
-        #lstm = tf.compat.v1.keras.layers.CuDNNLSTM(units=hidden_units, return_sequence=True)
         y = lstm(y)
         # y : [Batch, FrameAxis, FreqAxis]
         y = Dense(units= x.shape[-2])(y)

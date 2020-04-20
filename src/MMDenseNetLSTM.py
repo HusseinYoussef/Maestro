@@ -1,9 +1,6 @@
 
 import tensorflow as tf
-import featurizer as FS
-import soundfile as sf
-import numpy as np
-import utils 
+import numpy as np 
 from tensorflow.keras.models import Model
 from tensorflow.keras.backend import expand_dims, squeeze, concatenate
 from tensorflow.keras.layers import InputLayer, Input
@@ -288,20 +285,23 @@ class MMDenseNetLSTM:
         return self.dense_block(u1, 12, 3)
 
 
-    def build(self, audios_mag, bands, log= False, summary= False):
-        # audios_mag: the spectugram of the signal (frames, freq BINS, channels)
-        # bands: array of size 4 contains the freqency bins limits for each band.
+    def build(self, freq_bins, frames, channels, bands, log= False, summary= False):
+        """
+            # freq_bins: number of frequency bins.
+            # frames: number of framse.
+            # chennels: number of channels.
+            # bands: array of size 4 contains the freqency bins limits for each band.
+        """
 
         assert(len(bands)==4)
 
-        flatten_shape = 1
-        for i in range(0,3):
-            flatten_shape *= audios_mag.shape[i]
+        flatten_shape = freq_bins * frames * channels
+        #sample = np.random.rand(frames, freq_bins, channels)
         
         inputs = Input(shape=(flatten_shape,))
 
         net = inputs
-        net = Reshape(audios_mag.shape)(net)
+        net = Reshape( (frames, freq_bins, channels) )(net)
         
         # divide bands
         band1_inp = net[ : , : ,bands[0]:bands[1], :]
@@ -331,16 +331,17 @@ class MMDenseNetLSTM:
         #outputs = concatenate([outputs, net[:, :, -1: ,:]], axis=2)  I think this is useless line.
 
         model = Model(inputs=inputs, outputs=outputs)
-        model.compile(optimizer='rmsprop', loss='mean_squared_error', metrics=['accuracy'])
+        model.compile(optimizer='adam', loss='mean_squared_error', metrics=['accuracy'])
         print('Model Compilation Done.')
         if summary : model.summary()
 
         return model
 
-
+'''
 def bring_sample():
+    
     mag, rate = utils.audio_loader('D:/CMP/4th/GP/Datasets[OUT]/musdb18/train/A Classic Education - NightOwl/mixture.wav')
-    mag = mag[:8000]
+    mag = mag[:8000]  # (x,y,z)
     data = mag[None,...]
     #breakpoint()
     obj = FS.STFT()
@@ -349,18 +350,19 @@ def bring_sample():
     spectugram = spec(obj2)
     sample = spectugram[0] #(n_channels, freq_bins, n_frames)
     sample = np.transpose(sample,(2,1,0))
+    
     return sample
-
+'''
 
 if __name__ == "__main__":
     
     
     sample_rate = 44100
     bands = [0, 385, 1025, 2049]
-    sample = bring_sample() # (n_frames, freq_bins, n_channels)
-    print(sample.shape)
+    #sample = bring_sample() # (n_frames, freq_bins, n_channels)
+    #print(sample.shape)
     model = MMDenseNetLSTM()
-    model.build(sample, bands,log= True)
+    model.build(2049, 5000, 2, bands,log= True)
 
     print("Hi")
     

@@ -45,7 +45,7 @@ def draw_specgram(stft):
     # plt.ylabel('Frequency [Hz]')
     # plt.xlabel('Time [sec]')
     # plt.show()
-    #breakpoint()
+    breakpoint()
     
     fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(20, 4))
     cax = ax.matshow(
@@ -57,7 +57,7 @@ def draw_specgram(stft):
     )
     fig.colorbar(cax)
     plt.title("Original Spectrogram")
-    plt.show()
+    # plt.show()
 
 def pretty_spectrogram(stft, log=True, thresh=4):
     
@@ -81,5 +81,5 @@ def pretty_spectrogram(stft, log=True, thresh=4):
     )
     fig.colorbar(cax)
     plt.title("Pretty Spectrogram")
-    plt.show()
+    # plt.show()
 

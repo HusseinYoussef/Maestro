@@ -1,6 +1,7 @@
 
 import tensorflow as tf
 import numpy as np 
+import utils
 from tensorflow.keras.models import Model
 from tensorflow.keras.backend import expand_dims, squeeze, concatenate
 from tensorflow.keras.layers import InputLayer, Input
@@ -355,13 +356,18 @@ def bring_sample():
 
 if __name__ == "__main__":
     
-    
+    '''
     sample_rate = 44100
     bands = [0, 385, 1025, 2049]
     #sample = bring_sample() # (n_frames, freq_bins, n_channels)
     #print(sample.shape)
     model = MMDenseNetLSTM()
     model.build(2049, 5000, 2, bands,log= True)
+    '''
+    
+    
+     
+
 
     print("Hi")
     

@@ -1,20 +1,24 @@
 import numpy as np
 import torch
-from feature_extraction import STFT, Spectrogram
+import torch.nn.functional as F
+from featurizer import STFT, Spectrogram
+from utils import freq_to_bin
 
 # TODO NORMALIZE input
-
 class UMX(torch.nn.Module):
 
     def __init__(
         self, 
         frame_length=4096,
-        overlap=75,
+        frame_step=1024,
         rate=44100,
         n_channels=2,
         n_hidden=512,
+        input_mean=None,
+        input_scale=None,
         max_freq=None,
         fc_bias=True,
+        output_norm=False,
         n_layer=3
     ):
         super().__init__()
@@ -22,19 +26,18 @@ class UMX(torch.nn.Module):
         # For cropping the signal (downsampling)
         self.output_bins = frame_length // 2 + 1
         if max_freq and 0 < max_freq <= rate/2:
-            self.freq_bins = max_freq // (rate/frame_length)
+            # Bin 0:    -312.5 Hz  to    312.5 Hz  (center:     0.0 Hz)
+            # Bin 1:     312.5 Hz  to    937.5 Hz  (center:   625.0 Hz)
+            # Bin 2:     937.5 Hz  to   1562.5 Hz  (center:  1250.0 Hz)
+            self.freq_bins = freq_to_bin(max_freq=max_freq, rate=rate, n_fft=frame_length)
         else:
             self.freq_bins = self.output_bins
         
-        if 0 < overlap < 100:
-            frame_step = overlap * frame_length // 100
-        else:
-            frame_step = 75 * frame_length // 100
-
         self.stft = STFT(frame_length=frame_length, frame_step=frame_step, padding=True)
         self.specgram = Spectrogram(mono=(n_channels==1))
         self.n_hidden = n_hidden
         self.fc_bias = fc_bias
+        self.output_norm = output_norm
 
         # 1st fc layer
         self.fc1 = torch.nn.Linear(
@@ -78,22 +81,45 @@ class UMX(torch.nn.Module):
 
         self.bn3 = torch.nn.BatchNorm1d(num_features=self.fc3.out_features)
 
-    def forward(self, x):
+        if input_mean == None:
+            self.input_mean = torch.zeros(self.freq_bins)
+        else:
+            self.input_mean = torch.tensor(input_mean[:self.freq_bins])
 
+        if input_scale == None:
+            self.input_scale = torch.ones(self.freq_bins)
+        else:
+            self.input_scale = torch.tensor(1.0/input_scale[:self.freq_bins])
+
+        self.output_mean = torch.nn.Parameter(torch.ones(self.freq_bins), requires_grad=self.output_norm)
+        self.output_scale = torch.nn.Parameter(torch.ones(self.freq_bins), requires_grad=self.output_norm)
+
+    def extract_features(self, x):
+        """extract features of a given input of shape (batch_size, channels, samples)"""
+        return self.specgram(self.stft(x))
+
+    def forward(self, x):
+        """move input throught the model's pipeline"""
         # x shape (batch_size, n_channels, samples)
 
-        x = self.stft(x)[-1]
-        x = np.transpose(self.specgram(x), (0, 3, 1, 2))
+        # Compute Spectrogram
+        x = np.transpose(self.specgram(self.stft(x)), (0, 3, 1, 2))
+        breakpoint()
 
         # x shape (batch_size, frames, n_channels, freq_bins)
 
-        x = torch.from_numpy(x).float()
+        x = torch.Tensor(x)
         mix = x.clone()
         batch_size, frames, n_channels, freq_bins = x.shape
 
+        # Downsampling / crop the high frequencies
         x = x[..., :self.freq_bins]
         
-        x = self.fc1(x.reshape(batch_size*frames, n_channels*freq_bins))
+        # Normalize input
+        x -= self.input_mean
+        x *= self.input_scale
+
+        x = self.fc1(x.reshape(batch_size*frames, n_channels*self.freq_bins))
         x = self.bn1(x)
         x = torch.tanh(x)
         # x shape (batch_size*frames, hidden_size)
@@ -110,24 +136,28 @@ class UMX(torch.nn.Module):
 
         x = self.fc2(x.reshape(batch_size*frames, x.shape[-1]))
         x = self.bn2(x)
-        x = torch.relu(x)
+        x = F.relu(x)
         # x shape (batch_size*frames, hidden_size)
 
         x = self.fc3(x)
         x = self.bn3(x)
-        x = torch.relu(x)
         # x shape (batch_size*frames, channels*freq_bins)
 
-        x = x.reshape(batch_size, frames, n_channels, freq_bins)
+        x = x.reshape(batch_size, frames, n_channels, self.freq_bins)
+
+        if self.output_norm:
+            x *= self.output_scale
+            x += self.output_mean
+
         # original shape
-        x = x * mix
+        x = F.relu(x) * mix
 
         return x
 
 
 if __name__ == "__main__":
     
-    model = UMX(frame_length=50, overlap=50)
-    sample = np.random.rand(5, 2, 100)
+    model = UMX(frame_length=4096, frame_step=1024)
+    sample = np.random.rand(5, 2, 5000)
     model(sample)
     print("Hi")

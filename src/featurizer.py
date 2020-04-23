@@ -3,6 +3,7 @@ import soundfile as sf
 from scipy import signal
 from utils import draw_specgram, calc_freq, calc_time, pretty_spectrogram
 import matplotlib.pyplot as plt
+from utils import audio_loader
 
 # TODO Support Boundry
 class STFT:
@@ -14,7 +15,13 @@ class STFT:
         self.window = signal.get_window('hann', self.frame_length)
         self.scale = np.sqrt(1 / self.window.sum()**2)
 
-    def __call__(self, audio, rate=44100):
+    def __str__(self):
+        
+        print(f'n_fft: {self.frame_length}')
+        print(f'n_hop: {self.frame_step}')
+        return ""
+
+    def __call__(self, audio):
         """
         Input  dims: (batch_size, n_channels, samples)
         Output dims: (batch_size, n_channels, freq_bins, n_frames)
@@ -54,6 +61,7 @@ class STFT:
             else:
                 frames = np.array([sample[0][indices.astype(np.int32, copy=False)]])
 
+            # breakpoint()
             frames = self.window * frames
 
             # frame.shape -> (n_frames, frame_length)
@@ -68,9 +76,10 @@ class STFT:
         stft = np.transpose(stft, (0, 1, 3, 2))
 
         # 1 sec -> rate, ? sec -> sample  tarfeen f wasteen
-        time = calc_time(frame_length=self.frame_length, n_samples=audio.shape[-1], frame_step=self.frame_step, rate=rate)
-        freq = calc_freq(frame_length=self.frame_length, rate=rate)
-        return freq, time, stft
+        # time = calc_time(frame_length=self.frame_length, n_samples=audio.shape[-1], frame_step=self.frame_step, rate=rate)
+        # freq = calc_freq(frame_length=self.frame_length, rate=rate)
+        # return freq, time, stft
+        return stft
 
 class Spectrogram:
 
@@ -80,8 +89,7 @@ class Spectrogram:
 
     def __call__(self, stft):
         """
-        Input  dims: (batch_size, n_channels, freq_bins, n_frames)
-        Output dims: (batch_size, n_frames, n_channesl, freq_bins)
+        I/O dims: (batch_size, n_channels, freq_bins, n_frames)
         """
 
         # Magnitude
@@ -95,33 +103,28 @@ class Spectrogram:
 
 if __name__ == "__main__":
 
-    data, rate = sf.read('mixture.wav')
-    if len(data.shape) == 1:
-        data = np.reshape(data, (1,-1))
-        # data = np.tile(data, (2, 1))
-        # data[1] *= 5
-    else:
-        data = data.T
+    data, rate = audio_loader('F:/CMP 2020/GP/Datasets/Maestro/train/A Classic Education - NightOwl/drums.wav')
 
-    # data = data[:, :4*rate]
-    # sam = [data1, data1]
-    # sam = np.array(sam)
+    breakpoint()
+    data = data[:, :4*rate]
+    sam = [data, data]
+    sam = np.array(sam)
 
-    # breakpoint()
-    # obj = STFT()
-    # freq, time, res = obj(sam)
+    breakpoint()
+    obj = STFT()
+    res = obj(sam)
 
     ff = calc_freq(4096, rate)
     #breakpoint()
     f, t, zxx = signal.stft(data, fs=rate, window='hann', nperseg=2048, noverlap=2048-128,boundary=None)
-    draw_specgram(zxx)
-    pretty_spectrogram(zxx)
+    # draw_specgram(zxx)
+    pretty_spectrogram(res)
     # f, t, Sxx = signal.spectrogram(data, rate, nperseg=4096, noverlap=4096-1024)
-    if zxx.shape[0] == 2:
-        f2 = plt.figure(2)
-        plt.pcolormesh(t, f, np.abs(zxx), cmap=plt.cm.afmhot)
-        plt.title('STFT Magnitudesci')
-        plt.ylabel('Frequency [Hz]')
-        plt.xlabel('Time [sec]')
+    # if zxx.shape[0] == 2:
+    #     f2 = plt.figure(2)
+    #     plt.pcolormesh(t, f, np.abs(zxx), cmap=plt.cm.afmhot)
+    #     plt.title('STFT Magnitudesci')
+    #     plt.ylabel('Frequency [Hz]')
+    #     plt.xlabel('Time [sec]')
     plt.show()
 

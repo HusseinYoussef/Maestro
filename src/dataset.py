@@ -7,37 +7,64 @@ from tqdm import tqdm
 from glob import glob
 
 
-def musdb_parser(root_path, dest_path):
+def musdb_parser(args):
+
+    root_path = args.root
+    dest_path = args.dest
+
+    validation_tracks = [
+        'Actions - One Minute Smile',
+        'Clara Berry And Wooldog - Waltz For My Victims',
+        'Johnny Lokke - Promises & Lies',
+        'Patrick Talbot - A Reason To Leave',
+        'Triviul - Angelsaint',
+        'Alexander Ross - Goodbye Bolero',
+        'Fergessen - Nos Palpitants',
+        'Leaf - Summerghost',
+        'Skelpolu - Human Mistakes',
+        'Young Griffo - Pennies',
+        'ANiMAL - Rockshow',
+        'James May - On The Line',
+        'Meaxic - Take A Step',
+        'Traffic Experiment - Sirens'
+    ]
 
     if not(os.path.exists(f'{dest_path}/musdb18')):
 
-        root_train_path = root_path + '/train'
-        root_test_path = root_path + '/test'
-
+        os.mkdir(f'{dest_path}/musdb18')
         dest_train_path = dest_path + '/musdb18/train'
         dest_test_path = dest_path + '/musdb18/test'
 
         stems = ['mixture', 'drums', 'bass', 'other', 'vocals']
 
-        os.mkdir(f'{dest_path}/musdb18')
-        with open(f'{dest_path}/musdb18/musdb.csv', 'w') as fo:
+        for split_path, split in tqdm(zip([dest_train_path, dest_test_path], ['train', 'test'])):
+            with open(f'{dest_path}/musdb18/{split}.csv', 'w') as fo:
 
-            fo.write('fname,duration,split\n')
-            for split_path, split in tqdm(zip([dest_train_path, dest_test_path], ['train', 'test'])):
+                fo.write('fname,duration\n')
 
                 if not(os.path.exists(split_path)):
                     
                     os.mkdir(split_path)
                     print(f'\nProcessing {split} files')
-                    files = glob(root_train_path+'/*.mp4') if split == 'train' else glob(root_test_path+'/*.mp4')
+                    files = glob(f'{root_path}/{split}/*.mp4')
                     
-                    for track_path in tqdm(files, total=len(files)):
+                    if args.n:
+                        n_tracks = min(len(files), args.n)
+                    else:
+                        n_tracks = len(files)
+
+                    for track_path in tqdm(files[:n_tracks], total=n_tracks):
 
                         filename = os.path.basename(track_path)
                         
                         # remove extension
-                        fname = filename.split('.')[0]
-                        track_dir = f'{split_path}/{fname}'
+                        fname = filename.split('.stem')[0]
+                        if fname not in validation_tracks:
+                            track_dir = f'{split_path}/{fname}'
+                        else:
+                            if not os.path.exists(f'{dest_path}/musdb18/valid'):
+                                os.mkdir(f'{dest_path}/musdb18/valid')
+                            track_dir = f'{dest_path}/musdb18/valid/{fname}'
 
                         if not(os.path.exists(track_dir)):
                             os.mkdir(track_dir)
@@ -48,9 +75,12 @@ def musdb_parser(root_path, dest_path):
                         # breakpoint()
                         for idx, stem in enumerate(stems):
                             sf.write(f'{track_dir}/{stem}.wav', signal[idx], rate)
-                        fo.write(f'{fname},{duration},{split}\n')
+                        fo.write(f'{fname},{duration}\n')
 
-def ccmixter_parser(root_path, dest_path):
+def ccmixter_parser(args):
+
+    root_path = args.root
+    dest_path = args.dest
 
     if not(os.path.exists(f'{dest_path}/ccmixter')):
         os.mkdir(f'{dest_path}/ccmixter')
@@ -59,11 +89,19 @@ def ccmixter_parser(root_path, dest_path):
         dirs = glob(root_path+'/*')
         stems = ['mixture', 'other', 'vocals']
                     
-        with open(f'{dest_path}/ccmixter/ccmixter.csv', 'w') as fo:
+        with open(f'{dest_path}/ccmixter/train.csv', 'w') as fo:
             
-            fo.write('fname,duration,split\n')
-            for directory in tqdm(dirs, total=len(dirs)):
+            fo.write('fname,duration\n')
+            if args.n:
+                n_tracks = min(len(dirs), args.n)
+            else:
+                n_tracks = len(dirs)
 
+            for directory in tqdm(dirs[:n_tracks], total=n_tracks):
+
+                if not os.path.isdir(directory):
+                    continue
+                
                 fname = os.path.basename(directory)
                 track_dir = f'{dest_path}/ccmixter/train/{fname}'
                 os.mkdir(track_dir)
@@ -74,8 +112,53 @@ def ccmixter_parser(root_path, dest_path):
                 for idx, stem in enumerate(stems):
                     signal, rate = sf.read(files[idx])
                     duration = signal.shape[0]//rate
-                    shutil.move(files[idx], f'{track_dir}/{stem}.wav')
-                fo.write(f'{fname},{duration},train\n')
+                    shutil.copy(files[idx], f'{track_dir}/{stem}.wav')
+                fo.write(f'{fname},{duration}\n')
+
+
+def sampling(root_path, seq_duration=None):
+
+    if not os.path.exists(f'{root_path}/Maestro'):
+        os.mkdir(f'{root_path}/Maestro')
+        os.mkdir(f'{root_path}/Maestro/train')
+        os.mkdir(f'{root_path}/Maestro/valid')
+
+    datasets = ['musdb18', 'ccmixter']
+    sources = ['vocals', 'drums', 'bass', 'other', 'mixture']
+    # breakpoint()
+    for split in ['train', 'valid']:
+        for dataset in datasets:
+
+            split_dir = f'{root_path}/{dataset}/{split}'
+            if not os.path.exists(split_dir):
+                continue
+
+            tracks = glob(f'{split_dir}/*')
+            for track_path in tqdm(tracks, desc=f'{dataset} {split} files', total=len(tracks)):
+                fname = os.path.basename(track_path)
+
+                for source in sources:
+                    # Check if the track has this source
+                    source_path = f'{track_path}/{source}.wav'
+                    if not os.path.exists(source_path):
+                        continue
+                    signal, rate = sf.read(source_path)
+                    
+                    if seq_duration is not None:
+                        interval = rate * seq_duration
+                    else:
+                        interval = signal.shape[0]
+                        
+                    for i in range(0, signal.shape[0]-interval + 1, interval):
+                        if seq_duration is not None:
+                            sample = signal[i:i+interval, :]
+                            save_dir = f'{root_path}/Maestro/{split}/{fname}_{i//interval + 1}'
+                        else:
+                            sample = signal
+                            save_dir = f'{root_path}/Maestro/{split}/{fname}'
+                        if not os.path.exists(save_dir):
+                            os.mkdir(save_dir)
+                        sf.write(f'{save_dir}/{source}.wav', sample, rate)
 
 
 if __name__ == "__main__":
@@ -83,7 +166,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Prepare Dataset')
 
     parser.add_argument(
-        '--name', type=str, required=True, default='musdb', help='dataset name'
+        '--name', type=str, required=True, default='musdb18', help='dataset name'
+    )
+
+    parser.add_argument(
+        '--n', type=int, default=3, help='number of tracks of each dataset, 0 for all tracks'
     )
 
     parser.add_argument(
@@ -96,8 +183,9 @@ if __name__ == "__main__":
 
     args, _ = parser.parse_known_args()
 
-    if args.name == 'musdb':
-        musdb_parser(args.root, args.dest)
+    if args.name == 'musdb18':
+        musdb_parser(args)
     elif args.name == 'ccmixter':
-        ccmixter_parser(args.root, args.dest)
-    
+        ccmixter_parser(args)
+    elif args.name == 'maestro':
+        sampling(args.dest)

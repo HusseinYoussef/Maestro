@@ -22,8 +22,4 @@ if __name__ == "__main__":
     f, t, zxx = signal.stft(data, fs=rate, window='hann', nperseg=2048, return_onesided=True, noverlap=2048-128,boundary=None)
 
     #input= torch.from_numpy(zxx.real)
-    input =torch.rand(2,2,32,32)
 
-    net=mm()
-    out=net(input)
-    print(out)

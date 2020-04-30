@@ -147,12 +147,12 @@ def HHDS_parser(args):
                     for track in files:
                         shutil.copy(track, f'{dest_path}/HHDS/{dest_split}/{fname}')
 
-def sampling(root_path, datasets, seq_duration=None):
+def sampling(root_path, dest_path, datasets, seq_duration=None):
 
-    if not os.path.exists(f'{root_path}/Maestro'):
-        os.mkdir(f'{root_path}/Maestro')
-        os.mkdir(f'{root_path}/Maestro/train')
-        os.mkdir(f'{root_path}/Maestro/valid')
+    if not os.path.exists(f'{dest_path}/Maestro'):
+        os.mkdir(f'{dest_path}/Maestro')
+        os.mkdir(f'{dest_path}/Maestro/train')
+        os.mkdir(f'{dest_path}/Maestro/valid')
 
     # datasets = ['musdb18', 'ccmixter', 'HHDS']
     sources = ['vocals', 'drums', 'bass', 'other', 'mixture']
@@ -183,10 +183,10 @@ def sampling(root_path, datasets, seq_duration=None):
                     for i in range(0, signal.shape[0]-interval + 1, interval):
                         if seq_duration is not None:
                             sample = signal[i:i+interval, :]
-                            save_dir = f'{root_path}/Maestro/{split}/{fname}_{i//interval + 1}'
+                            save_dir = f'{dest_path}/Maestro/{split}/{fname}_{i//interval + 1}'
                         else:
                             sample = signal
-                            save_dir = f'{root_path}/Maestro/{split}/{fname}'
+                            save_dir = f'{dest_path}/Maestro/{split}/{fname}'
                         if not os.path.exists(save_dir):
                             os.mkdir(save_dir)
                         sf.write(f'{save_dir}/{source}.wav', sample, rate)
@@ -211,6 +211,9 @@ if __name__ == "__main__":
     parser.add_argument(
         '--dest', type=str, required=True, help='destination path of dataset'
     )
+    parser.add_argument(
+        '--seq-duration', type=int, help='length of sample'
+    )
 
     parser.add_argument('--datasets', nargs='+', help='datasets'
     )
@@ -224,4 +227,4 @@ if __name__ == "__main__":
     elif args.name == 'HHDS':
         HHDS_parser(args)
     elif args.name == 'maestro':
-        sampling(args.dest, args.datasets)
+        sampling(args.root, args.dest, args.datasets, args.seq_duration)

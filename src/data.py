@@ -90,46 +90,30 @@ class Dataset(torch.utils.data.Dataset):
         self.random_mix = random_mix
         self.linear_mix = linear_mix
         self.tracks = self.get_tracks()
+        self.generator = range(len(self.tracks))
         random.seed(seed)
 
     def __getitem__(self, index) -> torch.tensor: 
         
-        track_sources = []
+        # breakpoint()
         track = self.tracks[index // self.samples_per_track]
-
         if self.split == 'train' or self.linear_mix:
 
-            if self.random_chunk and self.seq_duration:
-                start = random.uniform(0, track['duration'] - self.seq_duration)
-            else:
-                start = 0
-
-            target_path = f'{track["path"]}/{self.target}.wav'
-            target_audio, _ = audio_loader(target_path, start=start, dur=self.seq_duration)
-
-            target_audio = self.transformation(target_audio)
-            track_sources.append(torch.from_numpy(target_audio).float())
-
+            track_sources = []
             for source in self.sources:
-                if source != self.target:
+                
+                if self.random_mix:
+                    rand_index = random.choice(self.generator)
+                    track = self.tracks[rand_index]
+                if self.random_chunk and self.seq_duration:
+                    start = random.uniform(0, track['duration'] - self.seq_duration)
+                else:
+                    start = 0
 
-                    if self.random_mix:
-                        random_index = random.choice(range(len(self.tracks)))
-                        interferer_track = self.tracks[random_index]
-                    else:
-                        interferer_track = track
+                source_audio, _ = audio_loader(f'{track["path"]}/{source}.wav', start=start, dur=self.seq_duration)
 
-                    if self.random_chunk and self.seq_duration:
-                        start = random.uniform(0, interferer_track['duration'] - self.seq_duration)
-                    
-                    source_path = f'{interferer_track["path"]}\{source}.wav'
-                    if not os.path.exists(source_path):
-                        continue
-
-                    source_audio, _ = audio_loader(source_path, start=start, dur=self.seq_duration)
-
-                    source_audio = self.transformation(source_audio)
-                    track_sources.append(torch.from_numpy(source_audio).float())
+                source_audio = self.transformation(source_audio)
+                track_sources.append(torch.from_numpy(source_audio).float())
 
             stems = torch.stack(track_sources, dim=0)
             
@@ -137,7 +121,6 @@ class Dataset(torch.utils.data.Dataset):
             x = stems.sum(0)
             # Target stem
             y = stems[0]
-        
         else:
 
             #Load non-linear mixture
@@ -168,9 +151,10 @@ class Dataset(torch.utils.data.Dataset):
 
         tracks = []
         # breakpoint()
-        for track_path in tqdm(dirs, desc='get_tracks', total=len(dirs)):
+        for track_path in tqdm(dirs, desc=f'{self.split}_tracks', total=len(dirs)):
             fname = os.path.basename(track_path)
 
+            # Make sure the track has the target source
             target_path = f'{track_path}/{self.target}.wav'
             if not os.path.exists(target_path):
                 continue
@@ -178,21 +162,19 @@ class Dataset(torch.utils.data.Dataset):
             info = audio_info(target_path)
             if (self.seq_duration and info['duration'] >= self.seq_duration) or self.seq_duration is None:
                 tracks.append({
-                    'path':track_path,
+                    'path': track_path,
+                    'name': os.path.basename(track_path),
                     **info
                 })
 
         return tracks
 
-    def track_paths(self) -> list:
+    def track_paths(self):
+        """Print names of the tracks"""
 
-        paths = []
         for track in self.tracks:
-            fname = os.path.basename(track['path'])
-            paths.append(f'{fname}/{self.target}.wav')
+            print(track['name'])
         
-        return paths
-
 
 if __name__ == "__main__":
 
@@ -220,7 +202,8 @@ if __name__ == "__main__":
         root=args.root,
         target=args.target,
         seq_duration=args.seq_duration,
-        seed=42
+        seed=42,
+        linear_mix=False
     )
 
     total_training_duration = 0
@@ -234,6 +217,7 @@ if __name__ == "__main__":
     dataloader_params = {'num_workers': args.workers, 'pin_memory': True} if use_cuda else {}
 
     train_sampler = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, **dataloader_params)
+    valid_sampler = torch.utils.data.DataLoader(valid_dataset, batch_size=1)
 
     from model import UMX
     mymodel = UMX(
@@ -251,5 +235,7 @@ if __name__ == "__main__":
     )
 
     # # paths = train_dataset.track_paths()
+    for x, y in tqdm(valid_sampler):
+        pass
     for x, y in tqdm(train_sampler):
         pass

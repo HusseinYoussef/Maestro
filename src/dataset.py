@@ -5,6 +5,7 @@ import stempeg
 import soundfile as sf
 from tqdm import tqdm
 from glob import glob
+import numpy as np
 
 
 def musdb_parser(args):
@@ -190,6 +191,29 @@ def sampling(root_path, dest_path, datasets, seq_duration=None):
                         if not os.path.exists(save_dir):
                             os.mkdir(save_dir)
                         sf.write(f'{save_dir}/{source}.wav', sample, rate)
+
+def expand_track(track, divisor): # track.shape = (samples, channel)
+    ''' this function expand the track to be divisable by divisor '''
+    
+    ''' Logic of the function: 
+    Take values from the begining of the track and append them to the end of the track to make
+    the final size of the track is divisble by divisor. '''
+
+    siz = len(track) # number of samples.
+    new_siz = (siz//divisor + 1) * divisor
+    reminder = int((new_siz-siz) % divisor)
+    return np.append(track,track[0:reminder,:],axis = 0)
+
+def split_track(track, sample_rate, t, folder_path, track_name):
+    ''' this function split the track to x tracks each of them is t seconds and save them in folder_path with track_name(0 -> x)'''
+    n = sample_rate * t # convert seconds to samples.
+    track = expand_track(track, n)
+    tracks = len(track) // n
+    for i in range(tracks):
+        start = i*n
+        end = (i+1)*n
+        file_path = folder_path + '/' + track_name + str(i) + ".wav"
+        sf.write(file_path, track[start:end,:], sample_rate)
 
 
 if __name__ == "__main__":

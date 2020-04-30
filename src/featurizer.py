@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.io.wavfile as wavfile
 import soundfile as sf
 from scipy import signal
 from utils import draw_specgram, calc_freq, calc_time, pretty_spectrogram
@@ -45,9 +46,8 @@ class STFT:
 
         assert signal_length > self.frame_length, 'Audio is too short'
 
-        # n_frames = ceil((signal_length - frame_length)/step_size)+1
         if self.center:
-            n_frames = int(np.ceil(signal_length / self.frame_step))
+            n_frames = int(signal_length // self.frame_step + 1)
         elif self.padding:
             n_frames = int(np.ceil(float(np.abs(signal_length - self.frame_length)) / self.frame_step) + 1)
         else:
@@ -128,8 +128,10 @@ class Spectrogram:
 if __name__ == "__main__":
 
     sources = []
-    data, rate = audio_loader('F:/CMP 2020/GP/Datasets/musdb18/valid/ANiMAL - Rockshow/vocals.wav')
-    data = data[:, 40*rate:60*rate]
+    data, rate = audio_loader('F:/CMP 2020/GP/Datasets/Maestro/train/A Classic Education - NightOwl/mixture.wav')
+    rate1, data1 = wavfile.read('F:/CMP 2020/GP/Datasets/Maestro/train/A Classic Education - NightOwl/mixture.wav')
+    # data = data[:, :8000]
+    breakpoint()
     # sources.append(torch.from_numpy(data).float())
     # data, rate = audio_loader('F:/CMP 2020/GP/Datasets/musdb18/valid/ANiMAL - Rockshow/drums.wav')
     # # data = data[:, 40*rate:60*rate]
@@ -145,13 +147,13 @@ if __name__ == "__main__":
 
     # mix = torch.stack(sources, dim=0).sum(0)
     # er = torch.nn.functional.mse_loss(mixture, mix)
-    data = data[:,:5000]
-    breakpoint()
+    # data = data[:,:5000]
     sam = [data, data]
     sam = np.array(sam)
 
-    obj = STFT(center=True)
+    obj = STFT(center=False)
     sam = data[None, ...]
+    breakpoint()
     res = np.squeeze(obj(sam))
 
     import umx

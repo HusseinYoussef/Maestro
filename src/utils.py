@@ -4,6 +4,7 @@ import soundfile as sf
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import signal
+import json
 
 def audio_info(audio_path):
     """Function to return the info of an audio file without reading the file"""
@@ -20,10 +21,11 @@ def audio_info(audio_path):
 def audio_loader(audio_path, start=0, dur=None):
     """Read audio file"""
 
-    info = audio_info(audio_path)
-    start = int(start * info['samplerate'])
+    # info = audio_info(audio_path)
+    sample_rate = 44100
+    start = int(start * sample_rate)
     if dur:
-        stop = start + int(dur * info['samplerate'])
+        stop = start + int(dur * sample_rate)
     else:
         # Read Full file
         stop = None
@@ -33,15 +35,33 @@ def audio_loader(audio_path, start=0, dur=None):
     # shape (channels, samples)
     return audio.T, rate
 
-def save_checkpoint(checkpoint_dict:dict, best:bool, target:str, path:str):
+def save_checkpoint(checkpoint_dict:dict, best:bool, target:str, path:str, name:str):
     """Save model checkpoint in the output folder"""
     
     # Save only weights of the model
     if best:
-        torch.save(checkpoint_dict['model_state'], os.path.join(path, target+'.pth'))
+        torch.save(checkpoint_dict['model_state'], os.path.join(path, target+f'_{name}'+'.pth'))
 
     #Save full checkpoint to resume training
-    torch.save(checkpoint_dict, os.path.join(path, target+'.chkpnt'))
+    torch.save(checkpoint_dict, os.path.join(path, target+f'_{name}'+'.chkpnt'))
+
+def learning_curve(path):
+    """Draw the learning curve"""
+
+    with open(path, 'r') as fin:
+        data = json.load(fin)
+
+    fig, ax = plt.subplots(figsize=(8,5))
+    ax.plot(data['train_losses'], label='train', color='r')
+    ax.plot(data['valid_losses'], label='valid', color='b')
+    ax.scatter(data['best_epoch']-1, data['best_loss'],
+            s=500, marker='v', color='c')
+    plt.legend(prop={'size': 19})
+    plt.ylim([0.0, 0.3])
+    ax.set_ylabel('mse loss', size=19)
+    ax.set_xlabel('epochs', size=19)
+    ax.tick_params(axis='both', which='major', labelsize=13)
+    plt.show()
 
 def freq_to_bin(max_freq, rate, n_fft):
     """Convert from max_freq to freq_bin"""

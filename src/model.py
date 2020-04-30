@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 from featurizer import STFT, Spectrogram
 from utils import freq_to_bin
+import copy
 
 class UMX(torch.nn.Module):
 
@@ -16,7 +17,6 @@ class UMX(torch.nn.Module):
         input_mean=None,
         input_scale=None,
         max_freq=None,
-        fc_bias=True,
         output_norm=False,
         n_layer=3,
         device='cpu'
@@ -36,14 +36,14 @@ class UMX(torch.nn.Module):
         self.stft = STFT(frame_length=frame_length, frame_step=frame_step, padding=True)
         self.specgram = Spectrogram(mono=(n_channels==1))
         self.n_hidden = n_hidden
-        self.fc_bias = fc_bias
         self.output_norm = output_norm
         self.device = device
+        
         # 1st fc layer
         self.fc1 = torch.nn.Linear(
             in_features=self.freq_bins*n_channels,
             out_features=n_hidden,
-            bias=self.fc_bias
+            bias=False
         )
 
         # Apply Batch normalization
@@ -67,7 +67,7 @@ class UMX(torch.nn.Module):
         self.fc2 = torch.nn.Linear(
             in_features=self.n_hidden*2,
             out_features=self.n_hidden,
-            bias=self.fc_bias
+            bias=False
         )
 
         self.bn2 = torch.nn.BatchNorm1d(num_features=self.fc2.out_features)
@@ -76,23 +76,25 @@ class UMX(torch.nn.Module):
         self.fc3 = torch.nn.Linear(
             in_features=self.n_hidden,
             out_features=self.output_bins*n_channels,
-            bias=self.fc_bias
+            bias=False
         )
 
         self.bn3 = torch.nn.BatchNorm1d(num_features=self.fc3.out_features)
 
         if input_mean is None:
-            self.input_mean = torch.zeros(self.freq_bins).to(device)
+            input_mean = torch.zeros(self.freq_bins).to(device)
         else:
-            self.input_mean = torch.from_numpy(input_mean[:self.freq_bins]).float().to(device)
+            input_mean = torch.from_numpy(input_mean[:self.freq_bins]).float().to(device)
 
         if input_scale is None:
-            self.input_scale = torch.ones(self.freq_bins).to(device)
+            input_scale = torch.ones(self.freq_bins).to(device)
         else:
-            self.input_scale = torch.from_numpy(1.0/input_scale[:self.freq_bins]).float().to(device)
+            input_scale = torch.from_numpy(1.0/input_scale[:self.freq_bins]).float().to(device)
 
-        self.output_mean = torch.nn.Parameter(torch.ones(self.output_bins), requires_grad=self.output_norm)
-        self.output_scale = torch.nn.Parameter(torch.ones(self.output_bins), requires_grad=self.output_norm)
+        self.input_mean = torch.nn.Parameter(input_mean)
+        self.input_scale = torch.nn.Parameter(input_scale)
+        self.output_mean = torch.nn.Parameter(torch.ones(self.output_bins).float(), requires_grad=self.output_norm)
+        self.output_scale = torch.nn.Parameter(torch.ones(self.output_bins).float(), requires_grad=self.output_norm)
 
     def extract_features(self, x):
         """extract features of a given input of shape (batch_size, channels, samples)"""
@@ -102,11 +104,11 @@ class UMX(torch.nn.Module):
         """move input throught the model's pipeline"""
 
         # x = self.extract_features(x)
+        # x = x.to(self.device)
         # x shape (batch_size, frames, n_channels, freq_bins)
-
-        # x = torch.Tensor(x)
-        mix = x.clone()
         batch_size, frames, n_channels, freq_bins = x.shape
+
+        mix = x.clone()
 
         # Downsampling / crop the high frequencies
         x = x[..., :self.freq_bins]
@@ -117,11 +119,11 @@ class UMX(torch.nn.Module):
 
         x = self.fc1(x.reshape(batch_size*frames, n_channels*self.freq_bins))
         x = self.bn1(x)
-        x = torch.tanh(x)
         # x shape (batch_size*frames, hidden_size)
-
         x = x.reshape(batch_size, frames, self.n_hidden)
         # x shape (batch_size, frames, hidden_size)
+
+        x = torch.tanh(x)
 
         lstm_out = self.lstm(x)[0]
         # lstm_out shape (batch_size, frames, hidden_size)

@@ -71,6 +71,22 @@ def freq_to_bin(max_freq, rate, n_fft):
 
     return max_bin
     
+def convert_to_wav(mp3_path, wav_path, rate=44100, channels=2):
+    """Function that takes path to .mp3 audio and converts it to .wav audio"""
+    
+    if os.path.exists(mp3_path):
+        os.system(f'ffmpeg -i "{mp3_path}" -vn -acodec pcm_s16le -ac {channels} -ar {rate} -f wav "{wav_path}"')
+    else:
+        print("Mp3 file doesn't exist")
+
+def convert_to_mp3(wav_path, mp3_path, rate=44100, channels=2):
+    """Function that takes path to .wav audio and converts it to .mp3 audio"""
+    
+    if os.path.exists(wav_path):
+        os.system(f'ffmpeg -i "{wav_path}" -vn -ar {rate} -ac {channels} -b:a 192k "{mp3_path}"')
+    else:
+        print("Wav file doesn't exist")
+
 def calc_freq(frame_length, rate):
     """Function to calculate the frequencies"""
     

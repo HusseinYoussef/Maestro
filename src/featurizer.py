@@ -8,7 +8,6 @@ from utils import audio_loader
 import torch
 import librosa
 
-# TODO Support Boundry
 class STFT:
 
     def __init__(
@@ -49,6 +48,7 @@ class STFT:
         if self.center:
             n_frames = int(signal_length // self.frame_step + 1)
         elif self.padding:
+            # Use ceil in case of padding the signal
             n_frames = int(np.ceil(float(np.abs(signal_length - self.frame_length)) / self.frame_step) + 1)
         else:
             n_frames = int(np.abs(signal_length - self.frame_length) // self.frame_step + 1)
@@ -124,26 +124,55 @@ class Spectrogram:
 
         return specgram
 
+class iSTFT():
+
+    def __init__(self, frame_length=4096, frame_step=1024):
+
+        self.frame_length = frame_length
+        self.frame_step = frame_step
+        self.window = signal.get_window('hann', self.frame_length)
+
+    def __call__(self, stft, boundary=True):
+        """
+        Performs the inverse Short Time Fourier Transform (iSTFT)
+
+        Parameters
+        ----------
+        stft: input short time fourier transfort of type complex and shape: channels, freq, frames.
+        boundary: Specifiy whether the input is extended at the boundaries.
+
+        Returns
+        -------
+        audio: audio signal of shape: channels, samples.
+        """
+
+        channels, freq, frames = stft.shape
+        signal_length = (frames-1) * self.frame_step + self.frame_length
+
+        inverse = np.fft.irfft(stft, axis=-2, n=self.frame_length) * self.window.sum()
+        audio = np.zeros((channels, signal_length), dtype=inverse.dtype)
+        norm = np.zeros(signal_length, dtype=inverse.dtype)
+
+        for frame in range(frames):
+            
+            audio[:, frame*self.frame_step : frame*self.frame_step + self.frame_length] += inverse[..., frame]*self.window
+            norm[frame*self.frame_step : frame*self.frame_step + self.frame_length] += self.window**2
+
+        if boundary:
+            # Crop the extension
+            audio = audio[:, self.frame_length//2:-self.frame_length//2]
+            norm = norm[self.frame_length//2:-self.frame_length//2]
+        
+        # Normalize the audio
+        audio /= np.where(norm > 1e-10, norm, 1.0)
+
+        return audio
+
 
 if __name__ == "__main__":
 
-    sources = []
     data, rate = audio_loader('F:/CMP 2020/GP/Datasets/Maestro/train/A Classic Education - NightOwl/mixture.wav')
-    rate1, data1 = wavfile.read('F:/CMP 2020/GP/Datasets/Maestro/train/A Classic Education - NightOwl/mixture.wav')
-    # data = data[:, :8000]
-    breakpoint()
-    # sources.append(torch.from_numpy(data).float())
-    # data, rate = audio_loader('F:/CMP 2020/GP/Datasets/musdb18/valid/ANiMAL - Rockshow/drums.wav')
-    # # data = data[:, 40*rate:60*rate]
-    # sources.append(torch.from_numpy(data).float())
-    # data, rate = audio_loader('F:/CMP 2020/GP/Datasets/musdb18/valid/ANiMAL - Rockshow/bass.wav')
-    # # data = data[:, 40*rate:60*rate]
-    # sources.append(torch.from_numpy(data).float())
-    # data, rate = audio_loader('F:/CMP 2020/GP/Datasets/musdb18/valid/ANiMAL - Rockshow/other.wav')
-    # # data = data[:, 40*rate:60*rate]
-    # sources.append(torch.from_numpy(data).float())
-    # mixture, rate = audio_loader('F:/CMP 2020/GP/Datasets/musdb18/valid/ANiMAL - Rockshow/mixture.wav')
-    # mixture = torch.from_numpy(mixture).float()
+    data = data[:, :8000]
 
     # mix = torch.stack(sources, dim=0).sum(0)
     # er = torch.nn.functional.mse_loss(mixture, mix)
@@ -151,10 +180,11 @@ if __name__ == "__main__":
     sam = [data, data]
     sam = np.array(sam)
 
-    obj = STFT(center=False)
+    obj = STFT(center=True)
     sam = data[None, ...]
-    breakpoint()
     res = np.squeeze(obj(sam))
+    inv_obj = iSTFT()
+    breakpoint()
 
     import umx
     unmix = umx.OpenUnmix(

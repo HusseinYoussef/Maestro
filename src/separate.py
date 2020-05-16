@@ -5,10 +5,10 @@ import scipy
 import norbert
 import json
 import numpy as np
-from utils import freq_to_bin
 from model import UMX
 from tqdm import tqdm
 import soundfile as sf
+from featurizer import iSTFT
 
 def load_model(target, path, name, device='cpu'):
     
@@ -43,17 +43,14 @@ def load_model(target, path, name, device='cpu'):
 
     return model
 
-def istft(X, rate=44100, n_fft=4096, n_hopsize=1024):
-    t, audio = scipy.signal.istft(
-        X / (n_fft / 2),
-        rate,
-        nperseg=n_fft,
-        noverlap=n_fft - n_hopsize,
-        boundary=True
-    )
+def istft(X, frame_length=4096, frame_step=1024):
+    
+    istft_obj = iSTFT(frame_length=frame_length, frame_step=frame_step)
+    audio = istft_obj(X / (frame_length / 2), boundary=True)
+
     return audio
 
-def sep(
+def separate(
     audio,
     targets,
     models_path,
@@ -107,8 +104,8 @@ def sep(
     for j, name in enumerate(source_names):
         audio_hat = istft(
             Y[..., j].T,
-            n_fft=target_model.stft.frame_length,
-            n_hopsize=target_model.stft.frame_step
+            frame_length=target_model.stft.frame_length,
+            frame_step=target_model.stft.frame_step
         )
         estimates[name] = audio_hat.T
         # estimate shape: samples, channels
@@ -149,7 +146,7 @@ if __name__ == "__main__":
     else:
         audio_file, rate = sf.read(args.path, start=args.start*rate, stop=None)
 
-    estimates = sep(audio=audio_file, targets=args.targets, niter=args.iter, 
+    estimates = separate(audio=audio_file, targets=args.targets, niter=args.iter, 
                     models_path=args.model, model_name=args.name)
     
     for target in tqdm(args.targets, desc='Writing Outputs'):

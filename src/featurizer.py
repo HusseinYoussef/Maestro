@@ -2,7 +2,7 @@ import numpy as np
 import scipy.io.wavfile as wavfile
 import soundfile as sf
 from scipy import signal
-from utils import draw_specgram, calc_freq, calc_time, pretty_spectrogram
+from utils import calc_freq, calc_time, pretty_spectrogram
 import matplotlib.pyplot as plt
 from utils import audio_loader
 import torch
@@ -168,6 +168,15 @@ class iSTFT():
 
         return audio
 
+def calc_spectrogram(signal):
+    """Function to compute spectrogram for plotting"""
+
+    audio = signal[None, ...]
+    stft_obj = STFT()
+    spec_obj = Spectrogram(mono=True)
+
+    return spec_obj(stft_obj(audio))
+
 
 if __name__ == "__main__":
 
@@ -209,7 +218,6 @@ if __name__ == "__main__":
     breakpoint()
     er = torch.nn.functional.mse_loss(torch.from_numpy(np.abs(res)).float(), torch.from_numpy(np.abs(lib)).float())
     f, t, zxx = signal.stft(data, fs=rate, window='hann', nperseg=4096, noverlap=4096-1024,boundary=None)
-    # draw_specgram(zxx)
     pretty_spectrogram(res)
     # f, t, Sxx = signal.spectrogram(data, rate, nperseg=4096, noverlap=4096-1024)
     # if zxx.shape[0] == 2:

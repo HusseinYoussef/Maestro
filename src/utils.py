@@ -99,39 +99,30 @@ def calc_time(frame_length, n_samples, frame_step, rate):
     time = np.arange(frame_length/2, n_samples - frame_length/2 + 1, frame_step) / float(rate)
     return time
 
-def draw_specgram(stft):
-    """Draw Spectrogram using stft"""
+def calc_fft(signal, rate=44100):
+    """Function to plot the signal in frequency domain"""
 
-    # Dim: (freq_bins, n_frames)
-    if len(stft.shape) == 3:
-        stft = stft[0]
-
-    # plt.pcolormesh(time, freq, np.abs(stft), cmap=plt.cm.afmhot)
-    # plt.title('STFT Magnitude')
-    # plt.ylabel('Frequency [Hz]')
-    # plt.xlabel('Time [sec]')
-    # plt.show()
-    breakpoint()
+    n = len(signal)
+    freq = np.fft.rfftfreq(n, d=1/rate)
+    mag = abs(np.fft.rfft(signal)/n)
     
-    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(20, 4))
-    cax = ax.matshow(
-        np.abs(stft),
-        interpolation="nearest",
-        aspect="auto",
-        cmap=plt.cm.afmhot,
-        origin="lower",
-    )
-    fig.colorbar(cax)
-    plt.title("Original Spectrogram")
+    fig, ax = plt.subplots(figsize=(8,5))
+    ax.plot(freq, mag, 'tomato')
+    ax.tick_params(axis='both', which='major', labelsize=12)
+    ax.tick_params(axis='both', which='minor', labelsize=12) 
+    plt.xlabel('Frequency (Hz)', fontsize=14)
+    plt.ylabel('Magnitude (normalized)', fontsize=14)
+    plt.title('Frequency Domain', fontsize=14)
     # plt.show()
 
-def pretty_spectrogram(stft, log=True, thresh=4):
-    
-    specgram = np.abs(stft)
-    if len(specgram.shape) == 3:
+def pretty_spectrogram(specgram, log=True, thresh=4):
+    """Function to plot spectrogram"""
+
+    if specgram.ndim == 3:
         specgram = specgram[0]
-    if len(specgram.shape) == 4:
+    elif specgram.ndim == 4:
         specgram = specgram[0][0]
+
     if log == True:
         specgram /= specgram.max()  # volume normalize to max 1
         specgram = np.log10(specgram)
@@ -139,15 +130,19 @@ def pretty_spectrogram(stft, log=True, thresh=4):
     else:
         specgram[specgram < thresh] = thresh  # set anything less than the threshold as the threshold
 
-    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(20, 4))
+    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(20, 6))
     cax = ax.matshow(
         specgram,
         interpolation="nearest",
         aspect="auto",
-        cmap=plt.cm.afmhot,
+        cmap=plt.cm.inferno,
         origin="lower",
     )
     fig.colorbar(cax)
-    plt.title("Pretty Spectrogram")
+    ax.xaxis.set_ticks_position('bottom')
+    ax.tick_params(axis='both', which='major', labelsize=12)
+    ax.tick_params(axis='both', which='minor', labelsize=12) 
+    plt.xlabel("Time", fontsize=14)
+    plt.ylabel("Frequency (Hz)", fontsize=14)
+    plt.title("Spectrogram", fontsize=14)
     # plt.show()
-

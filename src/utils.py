@@ -99,7 +99,22 @@ def calc_time(frame_length, n_samples, frame_step, rate):
     time = np.arange(frame_length/2, n_samples - frame_length/2 + 1, frame_step) / float(rate)
     return time
 
-def calc_fft(signal, rate=44100):
+def plot_signal(signal, rate=44100, title='Time-domain Signal'):
+    """Function to plot time domain signal
+
+    Input Signal of shape: channels, samples
+    """
+    
+    Time = np.linspace(0, signal.shape[1] / rate, num=signal.shape[1])
+
+    fig, ax = plt.subplots(figsize=(8,5))
+    ax.plot(Time, signal[0], 'tomato')
+    plt.xlabel("Time (s)", fontsize=12)
+    plt.ylabel("Amplitudes", fontsize=12)
+    plt.title(f'{title}', fontsize=12)
+    plt.show()
+
+def calc_fft(signal, rate=44100, title='Frequency Domain'):
     """Function to plot the signal in frequency domain"""
 
     n = len(signal)
@@ -112,10 +127,10 @@ def calc_fft(signal, rate=44100):
     ax.tick_params(axis='both', which='minor', labelsize=12) 
     plt.xlabel('Frequency (Hz)', fontsize=14)
     plt.ylabel('Magnitude (normalized)', fontsize=14)
-    plt.title('Frequency Domain', fontsize=14)
+    plt.title(f'{title}', fontsize=14)
     # plt.show()
 
-def pretty_spectrogram(specgram, log=True, thresh=4):
+def pretty_spectrogram(specgram, log=True, thresh=4, gray=False ,title='Spectrogram'):
     """Function to plot spectrogram"""
 
     if specgram.ndim == 3:
@@ -130,19 +145,29 @@ def pretty_spectrogram(specgram, log=True, thresh=4):
     else:
         specgram[specgram < thresh] = thresh  # set anything less than the threshold as the threshold
 
-    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(20, 6))
-    cax = ax.matshow(
-        specgram,
-        interpolation="nearest",
-        aspect="auto",
-        cmap=plt.cm.inferno,
-        origin="lower",
-    )
+    fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(15, 6))
+    if gray:
+        cax = ax.matshow(
+            specgram,
+            interpolation="nearest",
+            aspect="auto",
+            cmap=plt.cm.gray,
+            origin="lower",
+        )
+    else:
+        cax = ax.matshow(
+            specgram,
+            interpolation="nearest",
+            aspect="auto",
+            cmap=plt.cm.inferno,
+            origin="lower",
+        )
     fig.colorbar(cax)
     ax.xaxis.set_ticks_position('bottom')
     ax.tick_params(axis='both', which='major', labelsize=12)
     ax.tick_params(axis='both', which='minor', labelsize=12) 
+    plt.yticks(np.arange(0, specgram.shape[0]+1, 150))
     plt.xlabel("Time", fontsize=14)
     plt.ylabel("Frequency (Hz)", fontsize=14)
-    plt.title("Spectrogram", fontsize=14)
+    plt.title(f"{title}", fontsize=14)
     # plt.show()

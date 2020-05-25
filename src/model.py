@@ -3,7 +3,6 @@ import torch
 import torch.nn.functional as F
 from featurizer import STFT, Spectrogram
 from utils import freq_to_bin
-import copy
 
 class UMX(torch.nn.Module):
 

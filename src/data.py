@@ -91,6 +91,7 @@ class Dataset(torch.utils.data.Dataset):
         self.linear_mix = linear_mix
         self.tracks = self.get_tracks()
         self.generator = range(len(self.tracks))
+        self.target_index = self.sources.index(self.target)
         random.seed(seed)
 
     def __getitem__(self, index) -> torch.tensor: 
@@ -120,7 +121,7 @@ class Dataset(torch.utils.data.Dataset):
             # linear mix
             x = stems.sum(0)
             # Target stem
-            y = stems[0]
+            y = stems[self.target_index]
         else:
 
             #Load non-linear mixture

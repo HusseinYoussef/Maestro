@@ -83,8 +83,8 @@ def separate(
 
     # shapes should be: (frames, freq_bins, channels) for wiener filter
 
-    # models_out shape is: (frames, freq_bins, channels, n_targets)
     models_out = np.transpose(np.array(models_out), (1, 3, 2, 0))
+    # models_out shape is: (frames, freq_bins, channels, n_targets)
 
     audio_stft = target_model.stft(audio_torch)
 

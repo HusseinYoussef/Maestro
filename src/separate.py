@@ -8,7 +8,7 @@ import numpy as np
 from model import UMX
 from tqdm import tqdm
 import soundfile as sf
-from featurizer import iSTFT
+import reconstruction
 
 def load_model(target, path, name, device='cpu'):
     
@@ -45,7 +45,7 @@ def load_model(target, path, name, device='cpu'):
 
 def istft(X, frame_length=4096, frame_step=1024):
     
-    istft_obj = iSTFT(frame_length=frame_length, frame_step=frame_step)
+    istft_obj = reconstruction.iSTFT(frame_length=frame_length, frame_step=frame_step)
     audio = istft_obj(X / (frame_length / 2), boundary=True)
 
     return audio
@@ -92,13 +92,7 @@ def separate(
     audio_stft = audio_stft[0].transpose(2, 1, 0)
     # audio_stft shape is: (frames, freq_bins, channels)
 
-    if residual_model or len(targets) == 1:
-        models_out = norbert.residual_model(models_out, audio_stft, alpha if softmask else 1)
-        source_names += (['residual'] if len(targets) > 1
-                         else ['accompaniment'])
-
-    Y = norbert.wiener(models_out, audio_stft.astype(np.complex128), niter,
-                       use_softmask=softmask)
+    Y = reconstruction.wiener(models_out, audio_stft.astype(np.complex128), niter)
 
     estimates = {}
     for j, name in enumerate(source_names):

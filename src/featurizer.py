@@ -124,50 +124,6 @@ class Spectrogram:
 
         return specgram
 
-class iSTFT():
-
-    def __init__(self, frame_length=4096, frame_step=1024):
-
-        self.frame_length = frame_length
-        self.frame_step = frame_step
-        self.window = signal.get_window('hann', self.frame_length)
-
-    def __call__(self, stft, boundary=True):
-        """
-        Performs the inverse Short Time Fourier Transform (iSTFT)
-
-        Parameters
-        ----------
-        stft: input short time fourier transfort of type complex and shape: channels, freq, frames.
-        boundary: Specifiy whether the input is extended at the boundaries.
-
-        Returns
-        -------
-        audio: audio signal of shape: channels, samples.
-        """
-
-        channels, freq, frames = stft.shape
-        signal_length = (frames-1) * self.frame_step + self.frame_length
-
-        inverse = np.fft.irfft(stft, axis=-2, n=self.frame_length) * self.window.sum()
-        audio = np.zeros((channels, signal_length), dtype=inverse.dtype)
-        norm = np.zeros(signal_length, dtype=inverse.dtype)
-
-        for frame in range(frames):
-            
-            audio[:, frame*self.frame_step : frame*self.frame_step + self.frame_length] += inverse[..., frame]*self.window
-            norm[frame*self.frame_step : frame*self.frame_step + self.frame_length] += self.window**2
-
-        if boundary:
-            # Crop the extension
-            audio = audio[:, self.frame_length//2:-self.frame_length//2]
-            norm = norm[self.frame_length//2:-self.frame_length//2]
-        
-        # Normalize the audio
-        audio /= np.where(norm > 1e-10, norm, 1.0)
-
-        return audio
-
 def calc_spectrogram(signal):
     """Function to compute spectrogram for plotting"""
 
@@ -192,7 +148,7 @@ if __name__ == "__main__":
     obj = STFT(center=True)
     sam = data[None, ...]
     res = np.squeeze(obj(sam))
-    inv_obj = iSTFT()
+    # inv_obj = iSTFT()
     breakpoint()
 
     import umx

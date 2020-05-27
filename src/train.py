@@ -1,6 +1,5 @@
 import os
 import torch
-from torchsummary import summary
 import argparse
 import numpy as np
 import tqdm
@@ -12,6 +11,7 @@ import sklearn.preprocessing
 from featurizer import STFT, Spectrogram
 from utils import save_checkpoint
 from model import UMX
+from packages.torchsummary import summary
 
 def train(device, model, train_sampler, optimizer) -> float:
     """Train an Epoch and return the average loss"""
@@ -22,16 +22,14 @@ def train(device, model, train_sampler, optimizer) -> float:
     losses_avg = 0
     for x, y in tqdm.tqdm(train_sampler, desc='Training Batch'):
 
-        # move the the batch to CPU/GPU
-        x, y = x.to(device), y.to(device)
-        
         # Clear the grads of the optimizer since pytorch accumlates the grads
         optimizer.zero_grad()
-        
-        # Compute model output spectrogram
-        Y_hat = model(x)
+        feats = model.extract_features(x)
+        feats = feats.to(device)
+        # Compute model output
+        Y_hat = model(feats)
         # Actual spectrogram
-        Y = model.extract_features(y)
+        Y = model.extract_features(y).to(device)
         # Compute average MSE over the batch
         loss = torch.nn.functional.mse_loss(Y_hat, Y)
         # Compute the grads using backpropagation  d(loss)/dw
@@ -56,13 +54,13 @@ def valid(device, model, valid_sampler):
 
     # stop autograd from tracking history on Tensors to free memory and speed up
     with torch.no_grad():
-        for x, y in valid_sampler:
+        for x, y in tqdm.tqdm(valid_sampler, desc='valid'):
 
-            x, y = x.to(device), y.to(device)
-            
-            Y_hat = model(x)
+            feats = model.extract_features(x)
+            feats = feats.to(device)
+            Y_hat = model(feats)
             # Actual spectrogram
-            Y = model.extract_features(y)
+            Y = model.extract_features(y).to(device)
             # Compute average MSE over the batch
             loss = torch.nn.functional.mse_loss(Y_hat, Y)
 
@@ -76,20 +74,16 @@ def standard_scaler(args, dataset:Dataset):
     """Calculate statistics for the dataset using standard Scaler"""
 
     scaler = sklearn.preprocessing.StandardScaler()
-    # spec = torch.nn.Sequential(
-    #     STFT(frame_length=args.frame_length, frame_step=args.frame_step),
-    #     Spectrogram(mono=True)
-    # )
+
     stft_obj = STFT(frame_length=args.frame_length, frame_step=args.frame_step)
     spec_obj = Spectrogram(mono=True)
 
     dataset_cpy = copy.deepcopy(dataset)
     dataset_cpy.samples_per_track = 1
-    dataset_cpy.transformation = lambda audio:audio
     dataset_cpy.random_chunk = False
     dataset_cpy.random_mix = False
     dataset_cpy.seq_duration = None
-    
+
     for index in tqdm.tqdm(range(len(dataset_cpy)), desc='Compute dataset statistics'):
         x, y = dataset_cpy[index]
 
@@ -135,7 +129,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--target', type=str, default='vocals',
                         help='target source')
-    parser.add_argument('--verpose', type=bool, default=False, 
+    parser.add_argument('--verbose', action='store_true', 
                         help='print optional description')
 
     # Dataset Parameters
@@ -143,6 +137,8 @@ if __name__ == "__main__":
                         help='root to dataset directory')
     parser.add_argument('--output', type=str, default="open-unmix",
                         help='provide output path folder name')
+    parser.add_argument('--linear-mix', action='store_true', 
+                        help='compute linear mix of sources for validation')
                         
     # Training Parameters
     parser.add_argument('--epochs', type=int, default=10,
@@ -163,6 +159,8 @@ if __name__ == "__main__":
     # Model Parameters
     parser.add_argument('--model', type=str,
                         help='path to a model checkpoint')
+    parser.add_argument('--name', type=str,
+                        help='name for output models')
     parser.add_argument('--seq-duration', type=int, default=5,
                         help='duration of samples')
     parser.add_argument('--frame-length', type=int, default=4096,
@@ -175,7 +173,7 @@ if __name__ == "__main__":
                         help='maximum model bandwidth in hertz(Hz)')
     parser.add_argument('--channels', type=int, default=2,
                         help='number of channels')
-    parser.add_argument('--output-norm', type=bool, default=False,
+    parser.add_argument('--output-norm', action='store_true',
                         help='apply output normalization')
     parser.add_argument('--workers', type=int, default=0,
                         help='Number of workers for dataloader.')
@@ -183,7 +181,8 @@ if __name__ == "__main__":
     args, _ = parser.parse_known_args()
 
     use_cuda = torch.cuda.is_available()
-    print("Using GPU:", use_cuda)
+    if args.verbose:
+        print("Using GPU:", use_cuda)
     device = torch.device("cuda" if use_cuda else "cpu")
     
     # To get static behaviour
@@ -193,13 +192,28 @@ if __name__ == "__main__":
     if not os.path.exists(args.output):
         os.mkdir(args.output)
 
-    train_dataset, valid_dataset = load_dataset(root=args.root, target=args.target, seq_duration=args.seq_duration)
+    train_dataset, valid_dataset = load_dataset(
+        root=args.root,
+        target=args.target, 
+        seq_duration=args.seq_duration,
+        linear_mix=args.linear_mix,
+        seed=args.seed
+    )
 
-    train_sampler = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+    dataloader_params = {'num_workers': args.workers, 'pin_memory': True} if use_cuda else {}
+
+    train_sampler = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, **dataloader_params)
     valid_sampler = torch.utils.data.DataLoader(valid_dataset, batch_size=1)
 
-    # scaler_mean, scaler_std = standard_scaler(args, train_dataset)
-    scaler_mean, scaler_std = None, None
+    if args.verbose:
+        print(str(train_dataset))
+        print(str(valid_dataset))
+        train_dataset.track_paths()
+        valid_dataset.track_paths()
+
+    scaler_mean, scaler_std = standard_scaler(args, train_dataset)
+    # scaler_mean, scaler_std = None, None
+    
     unmix = UMX(
         frame_length=args.frame_length,
         frame_step=args.frame_step,
@@ -209,11 +223,11 @@ if __name__ == "__main__":
         input_mean=scaler_mean,
         input_scale=scaler_std,
         max_freq=args.bandwidth,
-        fc_bias=True,
         output_norm=args.output_norm,
-        n_layer=3
+        n_layer=3,
+        device=device
     ).to(device)
-
+    
     optimizer = torch.optim.Adam(
         unmix.parameters(),
         lr=args.lr,
@@ -227,17 +241,24 @@ if __name__ == "__main__":
         cooldown=10
     )
 
+    if args.verbose:
+        for name, param in unmix.named_parameters():
+            if param.requires_grad:
+                print(name)
+        # summary(unmix, (5, 2, 2049))
+        # breakpoint()
+
     # Add option to resume training from a checkpoint
     if args.model:
 
-        with open(os.path.join(args.model, args.target+'_params.json'), 'r') as fin:
+        with open(os.path.join(args.model, args.target+f'_{args.name}_params.json'), 'r') as fin:
             res = json.load(fin)
         # Load Checkpoint
-        checkpoint_dict = torch.load(os.path.join(args.model, args.target+'.chkpnt'), map_location=device)
+        checkpoint_dict = torch.load(os.path.join(args.model, args.target+f'_{args.name}.chkpnt'), map_location=device)
 
         # Load Model and optimizer parameters
         unmix.load_state_dict(checkpoint_dict['model_state'])
-        optimizer.load_state_dict(checkpoint_dict['optimitzer_state'])
+        optimizer.load_state_dict(checkpoint_dict['optimizer_state'])
         scheduler.load_state_dict(checkpoint_dict['scheduler_state'])
         
         # Train starting from the last epoch 
@@ -256,8 +277,7 @@ if __name__ == "__main__":
     for epoch in pbar:
         
         pbar.set_description('Training Epoch')
-
-        # One pass
+        # breakpoint()
         train_loss = train(device, unmix, train_sampler, optimizer)
         valid_loss = valid(device, unmix, valid_sampler)
         scheduler.step(valid_loss)
@@ -269,6 +289,7 @@ if __name__ == "__main__":
 
         if best_loss == None:
             best_loss = valid_loss
+            best_epoch = epoch
         # Best epoch is whose loss is lower than best loss
         if valid_loss < best_loss:
             best_loss = valid_loss
@@ -288,11 +309,14 @@ if __name__ == "__main__":
             checkpoint_dict=checkpoint_dict,
             best=valid_loss==best_loss,
             target=args.target,
-            path=args.output
+            path=args.output,
+            name=args.name
         )
 
-        # Current results
+        # Save configurations
         params = {
+            'args': vars(args),
+            'sample_rate': train_dataset.samplerate,
             'epochs_trained': epoch,
             'best_epoch': best_epoch,
             'best_loss': best_loss,
@@ -300,7 +324,6 @@ if __name__ == "__main__":
             'valid_losses': valid_losses
         }
 
-        with open(os.path.join(args.output, args.target+'_params.json'), 'w') as of:
-            of.write(json.dumps(params))
+        with open(os.path.join(args.output, args.target+f'_{args.name}_params.json'), 'w') as of:
+            of.write(json.dumps(params, indent=4))
 
-    breakpoint()

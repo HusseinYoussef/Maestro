@@ -204,16 +204,47 @@ def expand_track(track, divisor): # track.shape = (samples, channel)
     reminder = int((new_siz-siz) % divisor)
     return np.append(track,track[0:reminder,:],axis = 0)
 
-def split_track(track, sample_rate, t, folder_path, track_name):
+def split_track(track, sample_rate, t, write= False, folder_path=None, track_name=None):
     ''' this function split the track to x tracks each of them is t seconds and save them in folder_path with track_name(0 -> x)'''
     n = sample_rate * t # convert seconds to samples.
     track = expand_track(track, n)
     tracks = len(track) // n
+    splitted = []
     for i in range(tracks):
         start = i*n
         end = (i+1)*n
-        file_path = folder_path + '/' + track_name + str(i) + ".wav"
-        sf.write(file_path, track[start:end,:], sample_rate)
+        if write:
+            file_path = folder_path + '/' + track_name + str(i) + ".wav"
+            sf.write(file_path, track[start:end,:], sample_rate)
+        else:
+            splitted.append(track[start:end,:])
+
+    if not write:
+        return splitted
+    
+def construct_splitted_dataset(original_data_path, x_path, y_path, stem, seconds):
+  ''' this function splits the tracks which located in original_data_path, and then construct two directories in x_path & y_path and locates the output on them. '''
+  label = 0
+
+  if not(os.path.exists(x_path)):
+    os.mkdir(x_path)
+
+  if not(os.path.exists(y_path)):
+    os.mkdir(y_path)
+
+  original_data_path += '/*'
+  tracks = glob(original_data_path)
+
+  for track_path in tqdm(tracks, total=len(tracks)):
+    mix_path = track_path + '/mixture.wav'
+    stem_path = track_path + f'/{stem}.wav'
+
+    track, sample_rate = sf.read(mix_path, always_2d=True)
+    split_track(track, sample_rate, seconds, x_path, str(label), write= True)
+
+    track, sample_rate = sf.read(stem_path, always_2d=True)
+    split_track(track, sample_rate, seconds, y_path, str(label), write= True)
+    label+=1
 
 
 if __name__ == "__main__":

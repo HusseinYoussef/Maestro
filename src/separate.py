@@ -43,13 +43,6 @@ def load_model(target, path, name, device='cpu'):
 
     return model
 
-def istft(X, frame_length=4096, frame_step=1024):
-    
-    istft_obj = reconstruction.iSTFT(frame_length=frame_length, frame_step=frame_step)
-    audio = istft_obj(X / (frame_length / 2), boundary=True)
-
-    return audio
-
 def separate(
     audio,
     targets,
@@ -84,7 +77,7 @@ def separate(
     # shapes should be: (frames, freq_bins, channels) for wiener filter
 
     models_out = np.transpose(np.array(models_out), (1, 3, 2, 0))
-    # models_out shape is: (frames, freq_bins, channels, n_targets)
+    # models_out shape is: (frames, freq_bins, channels, n_sources)
 
     audio_stft = target_model.stft(audio_torch)
 
@@ -92,17 +85,14 @@ def separate(
     audio_stft = audio_stft[0].transpose(2, 1, 0)
     # audio_stft shape is: (frames, freq_bins, channels)
 
-    Y = reconstruction.wiener(models_out, audio_stft.astype(np.complex128), niter)
-
-    estimates = {}
-    for j, name in enumerate(source_names):
-        audio_hat = istft(
-            Y[..., j].T,
-            frame_length=target_model.stft.frame_length,
-            frame_step=target_model.stft.frame_step
-        )
-        estimates[name] = audio_hat.T
-        # estimate shape: samples, channels
+    estimates = reconstruction.reconstruct(
+                                mag_estimates=models_out,
+                                mix_stft=audio_stft,
+                                targets=targets,
+                                niter=niter,
+                                frame_length=target_model.stft.frame_length,
+                                frame_step=target_model.stft.frame_step
+                            )
 
     return estimates
 

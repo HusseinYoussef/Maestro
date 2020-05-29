@@ -1,12 +1,16 @@
 
 import tensorflow as tf
 import numpy as np 
+import math
 import utils
 import soundfile as sf
 from dataset import split_track
 from featurizer import STFT, Spectrogram
 from keras.backend import flatten, expand_dims
 from glob import glob
+import os
+from tqdm import tqdm
+import reconstruction
 from tensorflow.keras.models import Model
 from tensorflow.keras.backend import expand_dims, squeeze, concatenate
 from tensorflow.keras.layers import InputLayer, Input
@@ -17,16 +21,22 @@ from tensorflow.keras.layers import ReLU, AveragePooling2D, Conv2DTranspose
 
 
 class MMDenseNetLSTM:
-    def MMDenseNetLSTM(self, seconds, frame_length= 4096, frame_step= 1025, freq_rate= 44100,freq_bands= 2049, channels= 2):
+
+    def __calc_frames(self, samples):
+        ''' Given number of samples, this function calculate the number of frames''' 
+        if samples < self.frame_length:
+            raise NameError(f'givrn number of samples =>{samples} is less than frame length')
+        return (samples - self.frame_length) // self.frame_step + 1
+        
+    def __init__(self, seconds, frame_length= 4096, frame_step= 1024, sample_rate= 44100,freq_bands= 2049, channels= 2):
         ''' seconds argument is the time in seconds which the model will train and predict. '''
         self.seconds= seconds
         self.frame_length= frame_length
         self.frame_step= frame_step
-        self.freq_rate= freq_rate
+        self.sample_rate= sample_rate
         self.freq_bands= freq_bands
         self.channels= channels
-        samples = self.seconds * self.freq_rate
-        self.frames = (samples - self.frame_length) // self.frame_step + 1
+        self.frames = self.__calc_frames(self.seconds * self.sample_rate)
 
 
     def __composite_layer(self, x, depth, bottle_neck=False):
@@ -351,6 +361,7 @@ class MMDenseNetLSTM:
     
     def __prepare(self, track):
         ''' Tranform the track into spectrogram, reshape it and return it '''
+        stft = ((STFT())(track[None,...]))
         return np.transpose((Spectrogram())((STFT())(track[None,...]))[0],(2,1,0))
 
 
@@ -423,7 +434,7 @@ class MMDenseNetLSTM:
         # Load checkpoint:
         if resume:
             # Load model:
-            model = tf.python.keras.models.load_model(model_directory)
+            model = tf.keras.models.load_model(model_directory)
             #initial_epoch = int (((model_path.split('/')[-1]).split('.')[1]).split('-')[0]) + 1
             initial_epoch = init_epochs
         else:
@@ -464,38 +475,66 @@ class MMDenseNetLSTM:
         ''' this function takes a track whatever its length and then predict its stem in the output_directory '''
   
         if type(model) == str: # if model is a path not real object.
-            model = tf.python.keras.models.load_model(model)
+            if not os.path.exists(model):
+                raise NameError('Model does not exist')
+            model = tf.keras.models.load_model(model)
 
         if type(track) == str: # if track is a path not real object.
+            if not os.path.exists(track):
+                raise NameError('Track does not exist')
             track, sample_rate = sf.read(track, always_2d=True)
+        
+        # TODO check if the track is stereo or mono.
+        wanted_frames = int(math.ceil(self.__calc_frames(len(track)) / self.frames )) * self.frames
+        wanted_len = (wanted_frames - 1) * self.frame_step + self.frame_length
 
-        # expand the track then split it.
+        assert(self.__calc_frames(wanted_len) == wanted_frames)
 
-        siz = len(track) # number of samples.
-        divisor = self.sample_rate * self.seconds # convert seconds to samples.
-        new_siz = (siz//divisor + 1) * divisor
-        reminder = int((new_siz-siz) % divisor) # reminder is used to remove the added part to the track.
-        splitted = split_track(track, self.freq_rate, self.seconds)  # array of splitted tracks.
-  
-        full_output = None
+        padding = wanted_len - len(track)
+        track = np.append(track,padding*[[0,0]], axis=0)
+
+        assert(len(track) == wanted_len)
+        
+        mix_spec = self.__prepare(track.T)
+        iterations = self.__calc_frames(len(track)) // self.frames
+        full_output_stem = None
         flag = False
+        
 
-        obj = STFT()
-        for part in splitted:
-            part = part.T
-            output = model.predict(expand_dims(flatten(self.__prepare(part)),0))
-            output = np.transpose(output[0], (0,2,1))
-            if flag == False:
-                full_output = output
-                flag = True
-            else:
-                full_output = np.concatenate([full_output,output],axis=0) # concate on frames.
-    
-        ''' TODO: the remaining part is to reconstruct the track then save it in the given path. '''
-        #predicted_stem = reconstruct()
+        for i in tqdm(np.arange(iterations), total= iterations):
+          start = i * self.frames
+          end = (i+1) * self.frames
+          input = mix_spec[start:end, :, :]
+          output = model.predict(expand_dims(flatten(input),0))
+          output = output[0]
+          if flag == False:
+              full_output_stem = output
+              flag = True
+          else:
+              full_output_stem = np.concatenate([full_output_stem,output],axis=0) # concate on frames.
+
+        #breakpoint()
+        track = track.T # (channel, samples)
+        stft_mix = np.transpose(((STFT())(track[None,...]))[0],(2,1,0))
+        
+        predicted_stem = reconstruction.reconstruct( np.expand_dims(full_output_stem, axis= -1), stft_mix, ['drums'], boundary= False)['drums']
+        predicted_stem = predicted_stem[:-padding , :] # track length is now as input. (samples, channels)
+        track = track.T
+        track = track[:-padding, :]
+        print('prediction done.')
+        sf.write(f'{output_directory}/{track_name}[stem].wav', predicted_stem, self.sample_rate)
+        sf.write(f'{output_directory}/{track_name}[mix].wav', track, self.sample_rate)
+        utils.convert_to_mp3(f'{output_directory}/{track_name}[stem].wav', f'{output_directory}/{track_name}[stem].mp3')
+        utils.convert_to_mp3(f'{output_directory}/{track_name}[mix].wav', f'{output_directory}/{track_name}[mix].mp3')
+        print('writing done.')
+        
 
 if __name__ == "__main__":
     
+    mix_path = 'D:/CMP/4th/GP/Test/Buitraker - Revo X/mixture.wav'
+    model_path = 'D:/CMP/4th/GP/Test/check_point'
+    model = MMDenseNetLSTM(seconds= 3)
+    model.Predict(model= model_path, track= mix_path, output_directory= 'D:/CMP/4th/GP/Test/', track_name= 'AM Contra - Heart Peripheral')
     '''
     sample_rate = 44100
     bands = [0, 385, 1025, 2049]

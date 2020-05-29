@@ -175,8 +175,8 @@ def invert(mix_cov, eps):
         print("Invalid number of channels")
     return inv
 
-def reconstruct(mag_estimates, mix_stft, targets=['vocals'], niter=1, frame_length=4096, frame_step=1024):
-    """Function to reconstruct the magnitude estimated sources
+def reconstruct(mag_estimates, mix_stft, targets=['vocals'], niter=1, frame_length=4096, frame_step=1024, boundary= True):
+    '''Function to reconstruct the magnitude estimated sources
     
     parameters
     ----------
@@ -186,22 +186,22 @@ def reconstruct(mag_estimates, mix_stft, targets=['vocals'], niter=1, frame_leng
     niter: number of iteration of wiener filter
     frame_length: frame size
     frame_step: step of the frame
+    boundary: Specifiy whether the input is extended at the boundaries.
 
     Returns
     -------
     estimates: dictionary of time domain sources of shape: samples, channels
-    """
+    '''
     istft_obj = iSTFT(frame_length=frame_length, frame_step=frame_step)
-
     Y = wiener(mag_estimates, mix_stft.astype(np.complex128), niter)
     estimates = {}
     for j, name in enumerate(targets):
 
-        audio = istft_obj(Y[..., j].T / (frame_length / 2), boundary=True)
+        audio = istft_obj(Y[..., j].T / (frame_length / 2), boundary= boundary)
         estimates[name] = audio.T
         # estimate shape: samples, channels
 
-    return estimates
+    return estimates    
 
 class iSTFT():
 

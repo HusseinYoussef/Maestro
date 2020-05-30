@@ -6,6 +6,8 @@ import soundfile as sf
 from tqdm import tqdm
 from glob import glob
 import numpy as np
+import math
+from featurizer import STFT, Spectrogram
 
 
 def musdb_parser(args):
@@ -191,39 +193,17 @@ def sampling(root_path, dest_path, datasets, seq_duration=None):
                         if not os.path.exists(save_dir):
                             os.mkdir(save_dir)
                         sf.write(f'{save_dir}/{source}.wav', sample, rate)
-
-def expand_track(track, divisor): # track.shape = (samples, channel)
-    ''' this function expand the track to be divisable by divisor '''
     
-    ''' Logic of the function: 
-    Take values from the begining of the track and append them to the end of the track to make
-    the final size of the track is divisble by divisor. '''
-
-    siz = len(track) # number of samples.
-    new_siz = (siz//divisor + 1) * divisor
-    reminder = int((new_siz-siz) % divisor)
-    return np.append(track,track[0:reminder,:],axis = 0)
-
-def split_track(track, sample_rate, t, write= False, folder_path=None, track_name=None):
-    ''' this function split the track to x tracks each of them is t seconds and save them in folder_path with track_name(0 -> x)'''
-    n = sample_rate * t # convert seconds to samples.
-    track = expand_track(track, n)
-    tracks = len(track) // n
-    splitted = []
-    for i in range(tracks):
-        start = i*n
-        end = (i+1)*n
-        if write:
-            file_path = folder_path + '/' + track_name + str(i) + ".wav"
-            sf.write(file_path, track[start:end,:], sample_rate)
-        else:
-            splitted.append(track[start:end,:])
-
-    if not write:
-        return splitted
-    
-def construct_splitted_dataset(original_data_path, x_path, y_path, stem, seconds):
+def construct_splitted_dataset(original_data_path, # the directory of the tracks.
+                               x_path, y_path, # the two directories for the outputs.
+                               stem_type, # stem_type => ['drums','bass', 'other', 'vocals' ]
+                               seconds, # number of seconds which be in the output tracks.
+                               frame_length= 4096, frame_step= 1024, sample_rate= 44100,freq_bands= 2049, channels= 2):
   ''' this function splits the tracks which located in original_data_path, and then construct two directories in x_path & y_path and locates the output on them. '''
+  ''' the output will by two folders of matrices [spectrugrams]'''
+
+  calc_frames = lambda samples: ((samples - frame_length) // frame_step + 1)
+  frames = calc_frames(seconds * sample_rate)
   label = 0
 
   if not(os.path.exists(x_path)):
@@ -231,19 +211,47 @@ def construct_splitted_dataset(original_data_path, x_path, y_path, stem, seconds
 
   if not(os.path.exists(y_path)):
     os.mkdir(y_path)
+  
+  if stem_type not in ['drums','bass', 'other', 'vocals']:
+    return NameError(f'{stem_type} is not exist in our data')
+
 
   original_data_path += '/*'
   tracks = glob(original_data_path)
 
+  def expand_track_for_frames(track):
+    
+    wanted_frames = int(math.ceil(calc_frames(len(track)) / frames )) * frames
+    wanted_len = (wanted_frames - 1) * frame_step + frame_length
+    assert(calc_frames(wanted_len) == wanted_frames)
+    padding = wanted_len - len(track)
+    track = np.append(track, track[0:padding,:], axis= 0)
+    assert(len(track) == wanted_len)
+    return track
+
   for track_path in tqdm(tracks, total=len(tracks)):
-    mix_path = track_path + '/mixture.wav'
-    stem_path = track_path + f'/{stem}.wav'
+    mix_path = f'{track_path}/mixture.wav'
+    stem_path = f'{track_path}/{stem_type}.wav'
 
-    track, sample_rate = sf.read(mix_path, always_2d=True)
-    split_track(track, sample_rate, seconds, x_path, str(label), write= True)
+    mix, sample_rate = sf.read(mix_path, always_2d=True)
+    stem, sample_rate = sf.read(stem_path, always_2d=True)
 
-    track, sample_rate = sf.read(stem_path, always_2d=True)
-    split_track(track, sample_rate, seconds, y_path, str(label), write= True)
+    mix = expand_track_for_frames(mix).T
+    stem = expand_track_for_frames(stem).T
+    
+    mix_spec = np.transpose((Spectrogram())((STFT())(mix[None,...]))[0],(2,1,0))
+    stem_spec = np.transpose((Spectrogram())((STFT())(stem[None,...]))[0],(2,1,0))
+    #print('mix_spec shape: ', mix_spec.shape)
+    #print('stem_spec shape: ', stem_spec.shape)
+    mix_spec = np.reshape(mix_spec, ( mix_spec.shape[0] // frames, frames, mix_spec.shape[1], mix_spec.shape[2]) )
+    stem_spec = np.reshape(stem_spec, ( stem_spec.shape[0] // frames, frames, stem_spec.shape[1], stem_spec.shape[2]) )
+    #print('mix_spec after reshaping: ', mix_spec.shape)
+    #print('stem_spec after reshaping: ', stem_spec.shape)
+
+    for i in range(mix_spec.shape[0]):
+      np.save(f'{x_path}/{label}{i}.npy', mix_spec[i])
+      np.save(f'{y_path}/{label}{i}.npy', stem_spec[i])
+
     label+=1
 
 

@@ -316,13 +316,13 @@ class MMDenseNetLSTM:
 
         assert(len(bands)==4)
 
-        flatten_shape = self.freq_bins * self.frames * self.channels
-        #sample = np.random.rand(frames, freq_bins, channels)
+        flatten_shape = self.freq_bands * self.frames * self.channels
+        #sample = np.random.rand(frames, freq_bands, channels)
         
         inputs = Input(shape=(flatten_shape,))
 
         net = inputs
-        net = Reshape( (self.frames, self.freq_bins, self.channels) )(net)
+        net = Reshape( (self.frames, self.freq_bands, self.channels) )(net)
         
         # divide bands
         band1_inp = net[ : , : ,bands[0]:bands[1], :]
@@ -361,7 +361,6 @@ class MMDenseNetLSTM:
     
     def __prepare(self, track):
         ''' Tranform the track into spectrogram, reshape it and return it '''
-        stft = ((STFT())(track[None,...]))
         return np.transpose((Spectrogram())((STFT())(track[None,...]))[0],(2,1,0))
 
 
@@ -392,15 +391,8 @@ class MMDenseNetLSTM:
             _y = np.empty( (self.batch_size, *self.dim) )
 
             for i, ID in enumerate(current_labels):
-            
-                p1 = f'{self.x_path}/{ID}.wav'
-                p2 = f'{self.y_path}/{ID}.wav'
-
-                mix, rate = utils.audio_loader(p1)
-                stem, rate = utils.audio_loader(p2)
-                _x[i,] = flatten(self.prepare(mix))
-                _y[i,] = self.prepare(stem)
-            
+                _x[i,] = flatten(np.load(f'{self.x_path}/{ID}.npy'))
+                _y[i,] = np.load(f'{self.y_path}/{ID}.npy')
             return _x, _y
 
     def __clean(self, labels):
@@ -410,61 +402,53 @@ class MMDenseNetLSTM:
 
     def Train(self, model_directory, # the path to the model directory. (where the model will be saved/loaded).
             resume, # boolean to check whether the training will start from a checkpoint or from the begining.
-            init_epochs, # number of initial epochs (epochs which is done.)
             epochs, # number of epochs (must be > init_epochs)
             batch_size, # dimensions
-            freq_bands, # dimensions
-            frames, # dimensions
             train_X_path, # directory.
             train_Y_path, # directory.
             valid_X_path, # directory.
             valid_Y_path, # directory.
             logs_path, # directory.
+            init_epochs= 0, # number of initial epochs (epochs which is done.)
             evaluate= False, # boolean to evaluate the model after training. the evaluation is done using the test set.
             test_X_path= None,
             test_Y_path = None): 
-        ''' Before using this function, there should be directories containing the splitted tracks. '''
+        ''' Before using this function, there should be directories containing the splitted tracks spectrugrams. '''
         ''' This function returns 2 things: history , evalution '''
         
         
         # Initialize Callbacks:
-        mc = tf.keras.callbacks.ModelCheckpoint(filepath=model_directory, monitor='val_mean_squared_error', mode='min', verbose=1, save_best_only=True)
+        mc = tf.keras.callbacks.ModelCheckpoint(filepath=f'{model_directory}/model.keras', monitor='val_mean_squared_error', mode='min', verbose=1, save_best_only=True)
         mp = tf.keras.callbacks.TensorBoard(log_dir=logs_path, histogram_freq=0, embeddings_freq=0, update_freq="epoch")
-        initial_epoch = 0
-        # Load checkpoint:
-        if resume:
-            # Load model:
-            model = tf.keras.models.load_model(model_directory)
-            #initial_epoch = int (((model_path.split('/')[-1]).split('.')[1]).split('-')[0]) + 1
-            initial_epoch = init_epochs
-        else:
-            model = MMDenseNetLSTM().build(freq_bins=freq_bands, frames= frames, channels= 2, bands= [0, 385, 1025, 2049])
+        sp = tf.keras.callbacks.EarlyStopping(monitor='val_mean_squared_error', patience=10)
+        initial_epoch = init_epochs
+
+        model = tf.keras.models.load_model(model_directory) if resume else self.build()
+
         # Start/resume training
         train_data = glob(train_X_path + '/*')
         valid_data = glob(valid_X_path + '/*')
         
 
-        train_data = self.clean(train_data)
-        valid_data = self.clean(valid_data)
+        train_data = self.__clean(train_data) # pure IDs for training items.
+        valid_data = self.__clean(valid_data) # pure IDs for validation items.
 
-        training_generator = DataGenerator(train_data, dim= (frames, freq_bands, 2), x_path= train_X_path, y_path= train_Y_path, batch_size= batch_size)
-        validation_generator = DataGenerator(valid_data, dim= (frames, freq_bands, 2), x_path= valid_X_path, y_path= valid_Y_path, batch_size= batch_size)
+        training_generator = self.DataGenerator(train_data, dim= (self.frames, self.freq_bands, 2), x_path= train_X_path, y_path= train_Y_path, batch_size= batch_size)
+        validation_generator = self.DataGenerator(valid_data, dim= (self.frames, self.freq_bands, 2), x_path= valid_X_path, y_path= valid_Y_path, batch_size= batch_size)
 
         history = model.fit(training_generator,
                             validation_data= validation_generator,
                             workers= 8, verbose= 1, epochs= epochs,
-                            callbacks= [mc, mp], initial_epoch= initial_epoch)
+                            callbacks= [mc, mp, sp], initial_epoch= initial_epoch)
         evaluation = None
         if evaluate:
             print('\n\nevaluation\n\n')
             test_data = glob(test_X_path + '/*')
             test_data = self.clean(test_data)
-            testing_generator = DataGenerator(test_data, dim= (frames, freq_bands, 2), x_path= test_X_path, y_path= test_Y_path, batch_size= batch_size)
+            testing_generator = DataGenerator(test_data, dim= (self.frames, self.freq_bands, 2), x_path= test_X_path, y_path= test_Y_path, batch_size= batch_size)
             evaluation = model.evaluate(testing_generator,
                         batch_size=batch_size,
-                        verbose=1,
-                        workers=8,
-                        return_dict=True)
+                        verbose=1, workers=8, return_dict=True)
 
         return history, evaluation
     
@@ -497,30 +481,30 @@ class MMDenseNetLSTM:
         
         mix_spec = self.__prepare(track.T)
         iterations = self.__calc_frames(len(track)) // self.frames
+        mix_spec = np.reshape(mix_spec, ( mix_spec.shape[0] // self.frames, self.frames, mix_spec.shape[1], mix_spec.shape[2]) )
+
+        assert(mix_spec.shape[1] == self.frames)
+        assert(mix_spec.shape[2] == self.freq_bands)
+        assert(mix_spec.shape[3] == self.channels)
+
         full_output_stem = None
-        flag = False
         
-
         for i in tqdm(np.arange(iterations), total= iterations):
-          start = i * self.frames
-          end = (i+1) * self.frames
-          input = mix_spec[start:end, :, :]
-          output = model.predict(expand_dims(flatten(input),0))
-          output = output[0]
-          if flag == False:
-              full_output_stem = output
-              flag = True
-          else:
-              full_output_stem = np.concatenate([full_output_stem,output],axis=0) # concate on frames.
-
+            print(mix_spec[i].shape)
+            output = model.predict(expand_dims(flatten(mix_spec[i]),0))
+            output = output[0]
+            full_output_stem = np.concatenate([full_output_stem,output],axis=0) if i>0 else output
+            
         #breakpoint()
         track = track.T # (channel, samples)
-        stft_mix = np.transpose(((STFT())(track[None,...]))[0],(2,1,0))
+        stft_mix = np.transpose(((STFT())(track[None,...]))[0],(2,1,0)) # the stft which is needed for reconstruction.
         
         predicted_stem = reconstruction.reconstruct( np.expand_dims(full_output_stem, axis= -1), stft_mix, ['drums'], boundary= False)['drums']
-        predicted_stem = predicted_stem[:-padding , :] # track length is now as input. (samples, channels)
+        predicted_stem = predicted_stem[:-padding , :] # remove padding. (samples, channels)
+
         track = track.T
-        track = track[:-padding, :]
+        track = track[:-padding, :] # remove padding. (samples, channels)
+
         print('prediction done.')
         sf.write(f'{output_directory}/{track_name}[stem].wav', predicted_stem, self.sample_rate)
         sf.write(f'{output_directory}/{track_name}[mix].wav', track, self.sample_rate)

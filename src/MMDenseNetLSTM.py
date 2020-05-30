@@ -4,7 +4,6 @@ import numpy as np
 import math
 import utils
 import soundfile as sf
-from dataset import split_track
 from featurizer import STFT, Spectrogram
 from keras.backend import flatten, expand_dims
 from glob import glob

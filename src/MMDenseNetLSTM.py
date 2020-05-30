@@ -417,9 +417,9 @@ class MMDenseNetLSTM:
         
         
         # Initialize Callbacks:
-        mc = tf.keras.callbacks.ModelCheckpoint(filepath=f'{model_directory}/model.keras', monitor='val_mean_squared_error', mode='min', verbose=1, save_best_only=True)
+        mc = tf.keras.callbacks.ModelCheckpoint(filepath=f'{model_directory}/model.keras', monitor='val_mse', mode='min', verbose=1, save_best_only=True)
         mp = tf.keras.callbacks.TensorBoard(log_dir=logs_path, histogram_freq=0, embeddings_freq=0, update_freq="epoch")
-        sp = tf.keras.callbacks.EarlyStopping(monitor='val_mean_squared_error', patience=10)
+        sp = tf.keras.callbacks.EarlyStopping(monitor='val_mse', patience=10)
         initial_epoch = init_epochs
 
         model = tf.keras.models.load_model(model_directory) if resume else self.build()

@@ -17,28 +17,29 @@ def eval(reference_dir, estimates_dir, output_dir=None, target='vocals'):
         track_name = os.path.basename(reference_file).split('.wav')[0]
         estimate_file = os.path.join(estimates_dir, f'{track_name}.wav')
 
-        if not os.path.exists(estimate_file):
-            raise ValueError('estimate file not found')
+        if os.path.exists(estimate_file):
 
-        reference = []
-        estimates = []
+            reference = []
+            estimates = []
 
-        ref_audio, rate = sf.read(reference_file, always_2d=True)
-        est_audio, rate = sf.read(estimate_file, always_2d=True)
+            ref_audio, rate = sf.read(reference_file, always_2d=True)
+            est_audio, rate = sf.read(estimate_file, always_2d=True)
 
-        reference.append(ref_audio)
-        estimates.append(est_audio)
+            reference.append(ref_audio)
+            estimates.append(est_audio)
 
-        SDR, ISR, SIR, SAR = museval.evaluate(
-                        reference,
-                        estimates,
-                    )
-        m, s = divmod(ref_audio.shape[0]//rate, 60)
-        scores[track_name] = {
-            'duration': f'{m}:{s}',
-            "SDR(dB)": np.nanmedian(SDR[0].tolist()),
-            "Target": target
-        }
+            SDR, ISR, SIR, SAR = museval.evaluate(
+                            reference,
+                            estimates,
+                        )
+            m, s = divmod(ref_audio.shape[0]//rate, 60)
+            scores[track_name] = {
+                'duration': f'{m}:{s}',
+                "SDR(dB)": np.nanmedian(SDR[0].tolist()),
+                "Target": target
+            }
+        else:
+            print(f'\nEstimated file of {track_name} not found')
 
     df = pd.DataFrame.from_dict(scores, orient='index')
     if output_dir is None:

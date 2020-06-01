@@ -170,4 +170,4 @@ def pretty_spectrogram(specgram, log=True, thresh=4, gray=False ,title='Spectrog
     plt.xlabel("Time", fontsize=14)
     plt.ylabel("Frequency (Hz)", fontsize=14)
     plt.title(f"{title}", fontsize=14)
-    # plt.show()
+    plt.show()

@@ -48,8 +48,9 @@ def separate(
     targets,
     models_path,
     model_name,
-    niter=1, softmask=False, alpha=1.0,
-    residual_model=False, device='cpu'
+    niter=1,
+    residual_model=False,
+    device='cpu'
 ):
 
     # audio shape: samples, channels
@@ -66,10 +67,6 @@ def separate(
         feats = target_model.extract_features(audio_torch)
         output = target_model(feats).cpu().detach().numpy()
         
-        if softmask:
-            # only exponentiate the model if we use softmask
-            output = output**alpha
-
         # output shape is: (batch_size, frames, channels, freq_bins)
         models_out.append(output[0, ...])
         source_names += [target]
@@ -121,7 +118,10 @@ if __name__ == "__main__":
 
     parser.add_argument('--dur', type=int, default=None,
                         help='duration of the audio')
-    
+
+    parser.add_argument('--residual', action='store_true', 
+                        help='compute residual target')
+
     args, _ = parser.parse_known_args()
 
     rate = 44100
@@ -131,7 +131,7 @@ if __name__ == "__main__":
         audio_file, rate = sf.read(args.path, start=args.start*rate, stop=None)
 
     estimates = separate(audio=audio_file, targets=args.targets, niter=args.iter, 
-                    models_path=args.model, model_name=args.name)
+                    models_path=args.model, model_name=args.name, residual_model=args.residual)
     
     for target in tqdm(args.targets, desc='Writing Outputs'):
         if target in estimates:

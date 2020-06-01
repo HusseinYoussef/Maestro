@@ -1,7 +1,7 @@
 import numpy as np
 import itertools
 from scipy import signal
-
+import norbert
 def refine(complex_estimates, complex_mix, iterations=1, eps=None):
     """Function to apply the filter for some iterations
     
@@ -175,7 +175,7 @@ def invert(mix_cov, eps):
         print("Invalid number of channels")
     return inv
 
-def scale(mag_estimates, mix_stft, residual=False):
+def get_residual(mag_estimates, mix_stft, residual=False):
     """Scale the spectrogram
     
     parameters
@@ -200,12 +200,9 @@ def scale(mag_estimates, mix_stft, residual=False):
         print('Error in scaling.')
         scale_mag = mag_estimates
     
-    if residual:
-        accompaniment = np.maximum(0, mix_mag - total_sources)
-        return np.concatenate((scale_mag, accompaniment[..., None]), axis=3)
-    else:
-        return scale_mag
-
+    accompaniment = np.maximum(0, mix_mag - total_sources)
+    return np.concatenate((scale_mag, accompaniment[..., None]), axis=3)
+    
 def reconstruct(
     mag_estimates,
     mix_stft,
@@ -233,12 +230,12 @@ def reconstruct(
     -------
     estimates: dictionary of time domain sources of shape: samples, channels
     """
-    if residual:
-        targets.append('accompaniment')
+    if residual or len(targets) == 1:
+        targets += ['accompaniment']
     
     istft_obj = iSTFT(frame_length=frame_length, frame_step=frame_step)
     
-    mag_estimates = scale(mag_estimates, mix_stft, residual)
+    mag_estimates = get_residual(mag_estimates, mix_stft, residual or len(targets) == 1)
     Y = wiener(mag_estimates, mix_stft.astype(np.complex128), niter)
 
     estimates = {}

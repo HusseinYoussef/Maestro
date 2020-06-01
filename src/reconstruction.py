@@ -210,10 +210,11 @@ def reconstruct(
     mag_estimates,
     mix_stft,
     targets=['vocals'],
-    residual=False,
     niter=1,
     frame_length=4096,
-    frame_step=1024
+    frame_step=1024,
+    residual=False,
+    boundary=True
 ):
     """Function to reconstruct the magnitude estimated sources
     
@@ -225,7 +226,8 @@ def reconstruct(
     niter: number of iteration of wiener filter
     frame_length: frame size
     frame_step: step of the frame
-    residual: bool to know whether to build a residual source or not
+    residual: Specifiy whether to build an accompaniment target
+    boundary: Specifiy whether the input is extended at the boundaries.
 
     Returns
     -------
@@ -242,11 +244,11 @@ def reconstruct(
     estimates = {}
     for j, name in enumerate(targets):
 
-        audio = istft_obj(Y[..., j].T / (frame_length / 2), boundary=True)
+        audio = istft_obj(Y[..., j].T / (frame_length / 2), boundary=boundary)
         estimates[name] = audio.T
         # estimate shape: samples, channels
 
-    return estimates
+    return estimates    
 
 class iSTFT():
 

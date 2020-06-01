@@ -175,7 +175,46 @@ def invert(mix_cov, eps):
         print("Invalid number of channels")
     return inv
 
-def reconstruct(mag_estimates, mix_stft, targets=['vocals'], niter=1, frame_length=4096, frame_step=1024):
+def scale(mag_estimates, mix_stft, residual=False):
+    """Scale the spectrogram
+    
+    parameters
+    ----------
+    mag_estimates: magnitude estimates pf the models of shape:  (frames, freq_bins, channels, n_sources)
+    mix_stft: complex stft of the mixture of shape: (frames, freq_bins, channels)
+
+    Returns
+    -------
+    mag_estimates: scaled magnitude estimates pf the models of shape:  (frames, freq_bins, channels, n_sources)
+    """
+    eps = np.finfo(mag_estimates.dtype).eps
+
+    mix_mag = np.maximum(eps, np.abs(mix_stft))
+    total_sources = np.sum(mag_estimates, axis=-1)
+
+    try:
+        gain = (np.sum(mix_mag*total_sources, axis=0, keepdims=True) /
+                (eps+np.sum(total_sources**2, axis=0, keepdims=True)))
+        scale_mag = mag_estimates * gain[..., None]
+    except Exception:
+        print('Error in scaling.')
+        scale_mag = mag_estimates
+    
+    if residual:
+        accompaniment = np.maximum(0, mix_mag - total_sources)
+        return np.concatenate((scale_mag, accompaniment[..., None]), axis=3)
+    else:
+        return scale_mag
+
+def reconstruct(
+    mag_estimates,
+    mix_stft,
+    targets=['vocals'],
+    residual=False,
+    niter=1,
+    frame_length=4096,
+    frame_step=1024
+):
     """Function to reconstruct the magnitude estimated sources
     
     parameters
@@ -186,14 +225,20 @@ def reconstruct(mag_estimates, mix_stft, targets=['vocals'], niter=1, frame_leng
     niter: number of iteration of wiener filter
     frame_length: frame size
     frame_step: step of the frame
+    residual: bool to know whether to build a residual source or not
 
     Returns
     -------
     estimates: dictionary of time domain sources of shape: samples, channels
     """
+    if residual:
+        targets.append('accompaniment')
+    
     istft_obj = iSTFT(frame_length=frame_length, frame_step=frame_step)
-
+    
+    mag_estimates = scale(mag_estimates, mix_stft, residual)
     Y = wiener(mag_estimates, mix_stft.astype(np.complex128), niter)
+
     estimates = {}
     for j, name in enumerate(targets):
 

@@ -1,6 +1,6 @@
-
 import tensorflow as tf
 import numpy as np 
+import pathos.multiprocessing as mp
 import math
 import utils
 import soundfile as sf
@@ -8,6 +8,7 @@ from featurizer import STFT, Spectrogram
 from keras.backend import flatten, expand_dims
 from glob import glob
 import os
+import time
 from tqdm import tqdm
 import reconstruction
 from tensorflow.keras.models import Model
@@ -20,7 +21,6 @@ from tensorflow.keras.layers import ReLU, AveragePooling2D, Conv2DTranspose
 
 def draw(mat, title):
     utils.pretty_spectrogram(np.transpose(mat, (2,1,0)), title= title)
-
 
 class MMDenseNetLSTM:
 
@@ -402,6 +402,7 @@ class MMDenseNetLSTM:
         return labels
 
     def Evaluate(self, model, x_path, y_path, batch_size):
+        ''' return object contains loss and mse for given data.'''
 
         if type(model) == str: # if model is a path not real object.
             if not os.path.exists(model):
@@ -468,7 +469,7 @@ class MMDenseNetLSTM:
             evaluation = self.Evaluate(f'{model_directory}/model.keras', test_X_path, test_Y_path, batch_size)
 
         return history, evaluation
-    
+
     def Predict(self, model, # can be the model itself or model path.
             track, # can be the track itself (samples, channels) or track path.
             output_directory= None, track_name= None):
@@ -483,7 +484,8 @@ class MMDenseNetLSTM:
         if type(track) == str: # if track is a path not real object.
             if not os.path.exists(track):
                 raise NameError('Track does not exist')
-            track, sample_rate = sf.read(track, always_2d=True)
+            track, sample_rate = utils.audio_loader(track)
+            track = track.T # (samples, channels)
         
         # TODO check if the track is stereo or mono.
         wanted_frames = int(math.ceil(self.__calc_frames(len(track)) / self.frames )) * self.frames
@@ -504,17 +506,19 @@ class MMDenseNetLSTM:
         assert(mix_spec.shape[2] == self.freq_bands)
         assert(mix_spec.shape[3] == self.channels)
 
+        # Prediction part.----------------------------------------------
+        start_time = time.time()
+
         full_output_stem = None
-        full_output_mix = None
-        for i in tqdm(np.arange(iterations), total= iterations):
-            output = model.predict(expand_dims(flatten(mix_spec[i]),0))
-            output = output[0]
-            
+        for i in range(iterations):
+
+            output = model.predict(expand_dims(flatten(mix_spec[i]),0))[0]
             full_output_stem = np.concatenate([full_output_stem,output],axis=0) if i>0 else output
-            full_output_mix = np.concatenate([full_output_mix,mix_spec[i]],axis=0) if i>0 else mix_spec[i]
-        
-        
-        #breakpoint()
+
+        prediction_time = time.time() - start_time
+
+        # Reconstruction part.----------------------------------------------
+        start_time = time.time()
         track = track.T # (channel, samples)
         stft_mix = np.transpose(((STFT())(track[None,...]))[0],(2,1,0)) # the stft which is needed for reconstruction.
         
@@ -523,8 +527,9 @@ class MMDenseNetLSTM:
 
         track = track.T
         track = track[:-padding, :] # remove padding. (samples, channels)
+        reconstrucion_time = time.time() - start_time
 
-        print('prediction done.')
+        print(f'[LOG] process is done with prediction time: {prediction_time:.3f} seconds and reconstruction time: {reconstrucion_time:.3f} seconds')
         if output_directory != None and track_name != None:
 
             sf.write(f'{output_directory}/{track_name}[stem].wav', predicted_stem, self.sample_rate)

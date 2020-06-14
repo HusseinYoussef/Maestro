@@ -18,7 +18,7 @@ def audio_info(audio_path):
         'duration' : info.duration
     }
 
-def audio_loader(audio_path, start=0, dur=None):
+def audio_loader(audio_path, start=0, dur=None, always_stereo= True):
     """Read audio file"""
 
     # info = audio_info(audio_path)
@@ -30,10 +30,15 @@ def audio_loader(audio_path, start=0, dur=None):
         # Read Full file
         stop = None
 
-    audio, rate = sf.read(audio_path, start=start, stop=stop, always_2d=True)
+    audio, rate = sf.read(audio_path, start=start, stop=stop, always_2d=True)  # audio.shape = (samples, channels)
+    audio = audio.T # (channels, samples)
+
+    if audio.shape[0] == 1 and always_stereo: # mono.
+        audio = np.reshape(audio, audio.shape[1])
+        audio = np.array([audio, audio]) # (2, samples)
 
     # shape (channels, samples)
-    return audio.T, rate
+    return audio, rate
 
 def save_checkpoint(checkpoint_dict:dict, best:bool, target:str, path:str, name:str):
     """Save model checkpoint in the output folder"""
@@ -170,4 +175,4 @@ def pretty_spectrogram(specgram, log=True, thresh=4, gray=False ,title='Spectrog
     plt.xlabel("Time", fontsize=14)
     plt.ylabel("Frequency (Hz)", fontsize=14)
     plt.title(f"{title}", fontsize=14)
-    # plt.show()
+    plt.show()

@@ -1,6 +1,6 @@
-
 import tensorflow as tf
 import numpy as np 
+import pathos.multiprocessing as mp
 import math
 import utils
 import soundfile as sf
@@ -8,6 +8,7 @@ from featurizer import STFT, Spectrogram
 from keras.backend import flatten, expand_dims
 from glob import glob
 import os
+import time
 from tqdm import tqdm
 import reconstruction
 from tensorflow.keras.models import Model
@@ -18,6 +19,8 @@ from tensorflow.keras.layers import Conv2D, Dense, Flatten
 from tensorflow.keras.layers import ReLU, AveragePooling2D, Conv2DTranspose
 
 
+def draw(mat, title):
+    utils.pretty_spectrogram(np.transpose(mat, (2,1,0)), title= title)
 
 class MMDenseNetLSTM:
 
@@ -362,7 +365,6 @@ class MMDenseNetLSTM:
         ''' Tranform the track into spectrogram, reshape it and return it '''
         return np.transpose((Spectrogram())((STFT())(track[None,...]))[0],(2,1,0))
 
-
     class DataGenerator(tf.keras.utils.Sequence):
         def __init__(self, labels, x_path, y_path, dim, shuffle= True, batch_size= 1):
             self.labels = labels # names of the tracks in the dataset. NOTE: names of X is same as Y.
@@ -396,8 +398,25 @@ class MMDenseNetLSTM:
 
     def __clean(self, labels):
         for i,ID in enumerate(labels):
-            labels[i] = ''.join(filter(str.isdigit, ID))
+            labels[i] = ID.split('/')[-1].split('.')[0]
         return labels
+
+    def Evaluate(self, model, x_path, y_path, batch_size):
+        ''' return object contains loss and mse for given data.'''
+
+        if type(model) == str: # if model is a path not real object.
+            if not os.path.exists(model):
+                raise NameError('Model does not exist')
+            model = tf.keras.models.load_model(model)
+
+        test_data = glob(x_path + '/*')
+        test_data = self.__clean(test_data)
+
+        testing_generator = self.DataGenerator(test_data, dim= (self.frames, self.freq_bands, 2), x_path= x_path, y_path= y_path, batch_size= batch_size)
+
+        return model.evaluate(testing_generator,
+                    batch_size=batch_size,
+                    verbose=1, workers=8, return_dict=True)
 
     def Train(self, model_directory, # the path to the model directory. (where the model will be saved/loaded).
             resume, # boolean to check whether the training will start from a checkpoint or from the begining.
@@ -408,6 +427,7 @@ class MMDenseNetLSTM:
             valid_X_path, # directory.
             valid_Y_path, # directory.
             logs_path, # directory.
+            patience= 10, # number of epochs needed to stop the model if not get better during the traning.
             init_epochs= 0, # number of initial epochs (epochs which is done.)
             evaluate= False, # boolean to evaluate the model after training. the evaluation is done using the test set.
             test_X_path= None,
@@ -416,6 +436,9 @@ class MMDenseNetLSTM:
         ''' This function returns 2 things: history , evalution '''
         
         
+        if not os.path.exists(model_directory):
+            raise NameError('Model directory does not exist')
+
         # Initialize Callbacks:
         mc = tf.keras.callbacks.ModelCheckpoint(filepath=f'{model_directory}/model.keras', monitor='val_mse', mode='min', verbose=1, save_best_only=True)
         mp = tf.keras.callbacks.TensorBoard(log_dir=logs_path, histogram_freq=0, embeddings_freq=0, update_freq="epoch")
@@ -439,21 +462,17 @@ class MMDenseNetLSTM:
                             validation_data= validation_generator,
                             workers= 8, verbose= 1, epochs= epochs,
                             callbacks= [mc, mp, sp], initial_epoch= initial_epoch)
+        print('\nTraining done.')
         evaluation = None
         if evaluate:
-            print('\n\nevaluation\n\n')
-            test_data = glob(test_X_path + '/*')
-            test_data = self.clean(test_data)
-            testing_generator = DataGenerator(test_data, dim= (self.frames, self.freq_bands, 2), x_path= test_X_path, y_path= test_Y_path, batch_size= batch_size)
-            evaluation = model.evaluate(testing_generator,
-                        batch_size=batch_size,
-                        verbose=1, workers=8, return_dict=True)
+            print('Evaluating model with testing set.')
+            evaluation = self.Evaluate(f'{model_directory}/model.keras', test_X_path, test_Y_path, batch_size)
 
         return history, evaluation
-    
+
     def Predict(self, model, # can be the model itself or model path.
             track, # can be the track itself (samples, channels) or track path.
-            output_directory, track_name):
+            output_directory= None, track_name= None):
 
         ''' this function takes a track whatever its length and then predict its stem in the output_directory '''
   
@@ -465,7 +484,8 @@ class MMDenseNetLSTM:
         if type(track) == str: # if track is a path not real object.
             if not os.path.exists(track):
                 raise NameError('Track does not exist')
-            track, sample_rate = sf.read(track, always_2d=True)
+            track, sample_rate = utils.audio_loader(track)
+            track = track.T # (samples, channels)
         
         # TODO check if the track is stereo or mono.
         wanted_frames = int(math.ceil(self.__calc_frames(len(track)) / self.frames )) * self.frames
@@ -486,15 +506,19 @@ class MMDenseNetLSTM:
         assert(mix_spec.shape[2] == self.freq_bands)
         assert(mix_spec.shape[3] == self.channels)
 
+        # Prediction part.----------------------------------------------
+        start_time = time.time()
+
         full_output_stem = None
-        
-        for i in tqdm(np.arange(iterations), total= iterations):
-            print(mix_spec[i].shape)
-            output = model.predict(expand_dims(flatten(mix_spec[i]),0))
-            output = output[0]
+        for i in range(iterations):
+
+            output = model.predict(expand_dims(flatten(mix_spec[i]),0))[0]
             full_output_stem = np.concatenate([full_output_stem,output],axis=0) if i>0 else output
-            
-        #breakpoint()
+
+        prediction_time = time.time() - start_time
+
+        # Reconstruction part.----------------------------------------------
+        start_time = time.time()
         track = track.T # (channel, samples)
         stft_mix = np.transpose(((STFT())(track[None,...]))[0],(2,1,0)) # the stft which is needed for reconstruction.
         
@@ -503,21 +527,26 @@ class MMDenseNetLSTM:
 
         track = track.T
         track = track[:-padding, :] # remove padding. (samples, channels)
+        reconstrucion_time = time.time() - start_time
 
-        print('prediction done.')
-        sf.write(f'{output_directory}/{track_name}[stem].wav', predicted_stem, self.sample_rate)
-        sf.write(f'{output_directory}/{track_name}[mix].wav', track, self.sample_rate)
-        utils.convert_to_mp3(f'{output_directory}/{track_name}[stem].wav', f'{output_directory}/{track_name}[stem].mp3')
-        utils.convert_to_mp3(f'{output_directory}/{track_name}[mix].wav', f'{output_directory}/{track_name}[mix].mp3')
-        print('writing done.')
+        print(f'[LOG] process is done with prediction time: {prediction_time:.3f} seconds and reconstruction time: {reconstrucion_time:.3f} seconds')
+        if output_directory != None and track_name != None:
+
+            sf.write(f'{output_directory}/{track_name}[stem].wav', predicted_stem, self.sample_rate)
+            sf.write(f'{output_directory}/{track_name}[mix].wav', track, self.sample_rate)
+            #utils.convert_to_mp3(f'{output_directory}/{track_name}[stem].wav', f'{output_directory}/{track_name}[stem].mp3')
+            #utils.convert_to_mp3(f'{output_directory}/{track_name}[mix].wav', f'{output_directory}/{track_name}[mix].mp3')
+
+            print('writing done.')
         
+        return predicted_stem
 
 if __name__ == "__main__":
     
     mix_path = 'D:/CMP/4th/GP/Test/Buitraker - Revo X/mixture.wav'
-    model_path = 'D:/CMP/4th/GP/Test/check_point'
+    model_path = 'D:/CMP/4th/GP/Test/Model/model.keras'
     model = MMDenseNetLSTM(seconds= 3)
-    model.Predict(model= model_path, track= mix_path, output_directory= 'D:/CMP/4th/GP/Test/', track_name= 'AM Contra - Heart Peripheral')
+    model.Predict(model= model_path, track= mix_path, output_directory= 'D:/CMP/4th/GP/Test/', track_name= 'Buitraker - Revo X')
     '''
     sample_rate = 44100
     bands = [0, 385, 1025, 2049]

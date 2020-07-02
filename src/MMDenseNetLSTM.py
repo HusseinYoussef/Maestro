@@ -1,6 +1,7 @@
 import tensorflow as tf
 import numpy as np 
-import pathos.multiprocessing as mp
+import multiprocessing as mp
+from functools import reduce
 import math
 import utils
 import soundfile as sf
@@ -11,16 +12,23 @@ import os
 import time
 from tqdm import tqdm
 import reconstruction
+from threading import Thread
+from queue import Queue
 from tensorflow.keras.models import Model
 from tensorflow.keras.backend import expand_dims, squeeze, concatenate
 from tensorflow.keras.layers import InputLayer, Input
 from tensorflow.keras.layers import Reshape, MaxPooling2D, BatchNormalization
 from tensorflow.keras.layers import Conv2D, Dense, Flatten
 from tensorflow.keras.layers import ReLU, AveragePooling2D, Conv2DTranspose
-
+from pathos.multiprocessing import ProcessingPool as Pool
 
 def draw(mat, title):
     utils.pretty_spectrogram(np.transpose(mat, (2,1,0)), title= title)
+
+'''
+def run(queue, idx, model, matrix):
+    queue.put((idx, model.predict(matrix)[0]))
+'''
 
 class MMDenseNetLSTM:
 
@@ -335,12 +343,16 @@ class MMDenseNetLSTM:
         # densenet outputs
         outputs_band1 = self.__densenet_band1(band1_inp,log= log)
         print("Band1 Done.")
+
         outputs_band2 = self.__densenet_band2(band2_inp,log = log)
         print("Band2 Done.")
+
         outputs_band3 = self.__densenet_band3(band3_inp,log = log)
         print("Band3 Done.")
+
         outputs_full = self.__densenet_full(full_band_inp,log = log)
         print("Full Band Done.")
+        
         # concat outputs along frequency axis
         outputs = concatenate([outputs_band1, outputs_band2, outputs_band3], axis=2)
         if log: print(outputs)
@@ -469,7 +481,37 @@ class MMDenseNetLSTM:
             evaluation = self.Evaluate(f'{model_directory}/model.keras', test_X_path, test_Y_path, batch_size)
 
         return history, evaluation
+    
+    class Manager():
+        '''
+        co-ordinator to manage multithreading.
+        '''
+        def __init__(self, max_threads = 10):
+            self.max_threads = max(max_threads, 1)
+        
+        def run(self, queue, idx, function, inp):
+            queue.put((idx, function(inp)))
 
+        def go(self, function, arr):
+            '''
+            go is the function which should be used by the user.
+            function: the function which will be invoked by each thread.
+            arr: the inputs for the function.
+            '''
+            queue = Queue()
+            workers = []
+            for idx, x in enumerate(arr):
+                workers.append(Thread(target= self.run, args= (queue, idx, function, x, )))
+                if idx == len(arr)-1 or len(workers) == self.max_threads:
+                    for worker in workers: worker.start()
+                    for worker in workers: worker.join()
+                    workers = []
+            outputs = [None] * len(arr)
+            for i in range(len(arr)):
+                idx, out = queue.get()
+                outputs[idx] = out
+            return outputs
+    
     def Predict(self, model, # can be the model itself or model path.
             track, # can be the track itself (samples, channels) or track path.
             output_directory= None, track_name= None):
@@ -509,12 +551,11 @@ class MMDenseNetLSTM:
         # Prediction part.----------------------------------------------
         start_time = time.time()
 
-        full_output_stem = None
-        for i in range(iterations):
-
-            output = model.predict(expand_dims(flatten(mix_spec[i]),0))[0]
-            full_output_stem = np.concatenate([full_output_stem,output],axis=0) if i>0 else output
-
+        manager = self.Manager()
+        outputs = manager.go(model.predict, [expand_dims(flatten(mix_spec[i]),0) for i in range(iterations)])
+        outputs = [outputs[i][0] for i in range(iterations)]
+        full_output_stem = reduce(lambda a, b: np.concatenate([a, b], axis = 0), outputs)
+        
         prediction_time = time.time() - start_time
 
         # Reconstruction part.----------------------------------------------
@@ -555,11 +596,5 @@ if __name__ == "__main__":
     model = MMDenseNetLSTM()
     model.build(2049, 5000, 2, bands,log= True)
     '''
-    
-    
-     
-
-
-    print("Hi")
     
     

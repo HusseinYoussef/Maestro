@@ -534,10 +534,9 @@ class MMDenseNetLSTM:
         wanted_len = (wanted_frames - 1) * self.frame_step + self.frame_length
 
         assert(self.__calc_frames(wanted_len) == wanted_frames)
-
+        
         padding = wanted_len - len(track)
-        if padding > 0:  # prevention of padding array of length 0.
-            track = np.append(track,padding*[[0,0]], axis=0)
+        if padding > 0: track = np.append(track,padding*[[0,0]], axis=0)
 
         assert(len(track) == wanted_len)
         
@@ -565,10 +564,10 @@ class MMDenseNetLSTM:
         stft_mix = np.transpose(((STFT())(track[None,...]))[0],(2,1,0)) # the stft which is needed for reconstruction.
         
         predicted_stem = reconstruction.reconstruct( np.expand_dims(full_output_stem, axis= -1), stft_mix, ['drums'], boundary= False)['drums']
-        predicted_stem = predicted_stem[:-padding , :] # remove padding. (samples, channels)
+        if padding>0: predicted_stem = predicted_stem[:-padding , :] # remove padding. (samples, channels)
 
         track = track.T
-        track = track[:-padding, :] # remove padding. (samples, channels)
+        if padding>0: track = track[:-padding, :] # remove padding. (samples, channels)
         reconstrucion_time = time.time() - start_time
 
         print(f'[LOG] process is done with prediction time: {prediction_time:.3f} seconds and reconstruction time: {reconstrucion_time:.3f} seconds')
@@ -585,7 +584,7 @@ class MMDenseNetLSTM:
 
 if __name__ == "__main__":
     
-    mix_path = 'D:/CMP/4th/GP/Test/Buitraker - Revo X/mixture.wav'
+    mix_path = 'D:/CMP/4th/GP/Test/Louis Cressy Band - Good Time/mixture.wav'
     model_path = 'D:/CMP/4th/GP/Test/Model/model.keras'
     model = MMDenseNetLSTM(seconds= 3)
     model.Predict(model= model_path, track= mix_path, output_directory= 'D:/CMP/4th/GP/Test/', track_name= 'Buitraker - Revo X')

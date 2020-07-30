@@ -536,7 +536,8 @@ class MMDenseNetLSTM:
         assert(self.__calc_frames(wanted_len) == wanted_frames)
 
         padding = wanted_len - len(track)
-        track = np.append(track,padding*[[0,0]], axis=0)
+        if padding > 0:  # prevention of padding array of length 0.
+            track = np.append(track,padding*[[0,0]], axis=0)
 
         assert(len(track) == wanted_len)
         

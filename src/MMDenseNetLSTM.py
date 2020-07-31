@@ -360,7 +360,10 @@ class MMDenseNetLSTM:
         outputs = concatenate([outputs, outputs_full], axis=3)
         if log: print(outputs)
         # last conv to adjust channels
-        outputs = Conv2D(filters=2, kernel_size=[1, 2], padding='same')(outputs)
+        outputs = Conv2D(filters=2, kernel_size=[1, 2], padding='same')(outputs) # Now outputs = the filter that should be applied.
+
+        outputs = ReLU()(outputs) * net
+        
         if log: print(outputs)
         
         #outputs = concatenate([outputs, net[:, :, -1: ,:]], axis=2)  I think this is useless line.
@@ -584,10 +587,10 @@ class MMDenseNetLSTM:
 
 if __name__ == "__main__":
     
-    mix_path = 'D:/CMP/4th/GP/Test/Louis Cressy Band - Good Time/mixture.wav'
-    model_path = 'D:/CMP/4th/GP/Test/Model/model.keras'
+    mix_path = 'D:/CMP/4th/GP/Test/Cheap thrills (Sia).wav'
+    model_path = 'D:/CMP/4th/GP/Test/Model/model[vocals].keras'
     model = MMDenseNetLSTM(seconds= 3)
-    model.Predict(model= model_path, track= mix_path, output_directory= 'D:/CMP/4th/GP/Test/', track_name= 'Buitraker - Revo X')
+    #model.Predict(model= model_path, track= mix_path, output_directory= 'D:/CMP/4th/GP/Test/', track_name= 'Cheap thrills (Sia)')
     '''
     sample_rate = 44100
     bands = [0, 385, 1025, 2049]

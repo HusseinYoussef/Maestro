@@ -9,8 +9,8 @@ import utils
 
 if __name__ == "__main__":
     
-    utils.convert_to_wav('D:/CMP/4th/GP/Test/Cheap thrills (Sia).mp3', 'D:/CMP/4th/GP/Test/Cheap thrills (Sia).wav')
-    #utils.convert_to_mp3('D:/CMP/4th/GP/Test/Action mot[stem].wav', 'D:/CMP/4th/GP/Test/Action mot[stem].mp3')
+    #utils.convert_to_wav('D:/CMP/4th/GP/Test/Cheap thrills (Sia).mp3', 'D:/CMP/4th/GP/Test/Cheap thrills (Sia).wav')
+    utils.convert_to_mp3('D:/CMP/4th/GP/Test/B[stem].wav', 'D:/CMP/4th/GP/Test/Sia [Vocals].mp3')
 
 
 

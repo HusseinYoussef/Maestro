@@ -369,7 +369,7 @@ class MMDenseNetLSTM:
         #outputs = concatenate([outputs, net[:, :, -1: ,:]], axis=2)  I think this is useless line.
 
         model = Model(inputs=inputs, outputs=outputs)
-        model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mse'])
+        model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mean_squared_error'])
         print('Model Compilation Done.')
         if summary : model.summary()
 

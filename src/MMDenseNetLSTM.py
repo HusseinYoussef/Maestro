@@ -1,6 +1,5 @@
 import tensorflow as tf
 import numpy as np 
-import multiprocessing as mp
 from functools import reduce
 import math
 import utils
@@ -12,15 +11,13 @@ import os
 import time
 from tqdm import tqdm
 import reconstruction
-from threading import Thread
-from queue import Queue
+from Pool import Pool
 from tensorflow.keras.models import Model
 from tensorflow.keras.backend import expand_dims, squeeze, concatenate
 from tensorflow.keras.layers import InputLayer, Input
 from tensorflow.keras.layers import Reshape, MaxPooling2D, BatchNormalization
 from tensorflow.keras.layers import Conv2D, Dense, Flatten
 from tensorflow.keras.layers import ReLU, AveragePooling2D, Conv2DTranspose
-from pathos.multiprocessing import ProcessingPool as Pool
 
 def draw(mat, title):
     utils.pretty_spectrogram(np.transpose(mat, (2,1,0)), title= title)
@@ -369,7 +366,7 @@ class MMDenseNetLSTM:
         #outputs = concatenate([outputs, net[:, :, -1: ,:]], axis=2)  I think this is useless line.
 
         model = Model(inputs=inputs, outputs=outputs)
-        model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mean_squared_error'])
+        model.compile(optimizer='adam', loss='mse', metrics=['mse'])
         print('Model Compilation Done.')
         if summary : model.summary()
 
@@ -485,36 +482,6 @@ class MMDenseNetLSTM:
 
         return history, evaluation
     
-    class Manager():
-        '''
-        co-ordinator to manage multithreading.
-        '''
-        def __init__(self, max_threads = 10):
-            self.max_threads = max(max_threads, 1)
-        
-        def run(self, queue, idx, function, inp):
-            queue.put((idx, function(inp)))
-
-        def go(self, function, arr):
-            '''
-            go is the function which should be used by the user.
-            function: the function which will be invoked by each thread.
-            arr: the inputs for the function.
-            '''
-            queue = Queue()
-            workers = []
-            for idx, x in enumerate(arr):
-                workers.append(Thread(target= self.run, args= (queue, idx, function, x, )))
-                if idx == len(arr)-1 or len(workers) == self.max_threads:
-                    for worker in workers: worker.start()
-                    for worker in workers: worker.join()
-                    workers = []
-            outputs = [None] * len(arr)
-            for i in range(len(arr)):
-                idx, out = queue.get()
-                outputs[idx] = out
-            return outputs
-    
     def Predict(self, model, # can be the model itself or model path.
             track, # can be the track itself (samples, channels) or track path.
             output_directory= None, track_name= None):
@@ -554,8 +521,8 @@ class MMDenseNetLSTM:
         # Prediction part.----------------------------------------------
         start_time = time.time()
 
-        manager = self.Manager()
-        outputs = manager.go(model.predict, [expand_dims(flatten(mix_spec[i]),0) for i in range(iterations)])
+        manager = Pool()
+        outputs = manager.go(model.predict, [(expand_dims(flatten(mix_spec[i]),0),) for i in range(iterations)])
         outputs = [outputs[i][0] for i in range(iterations)]
         full_output_stem = reduce(lambda a, b: np.concatenate([a, b], axis = 0), outputs)
         
@@ -587,10 +554,10 @@ class MMDenseNetLSTM:
 
 if __name__ == "__main__":
     
-    mix_path = 'D:/CMP/4th/GP/Test/cheap.wav'
+    mix_path = 'D:/CMP/4th/GP/Test/A.wav'
     model_path = 'D:/CMP/4th/GP/Test/Model/model[vocals]v2.keras'
     model = MMDenseNetLSTM(seconds= 3)
-    model.Predict(model= model_path, track= mix_path, output_directory= 'D:/CMP/4th/GP/Test/', track_name= 'cheap')
+    model.Predict(model= model_path, track= mix_path, output_directory= 'D:/CMP/4th/GP/Test/', track_name= 'X')
     '''
     sample_rate = 44100
     bands = [0, 385, 1025, 2049]

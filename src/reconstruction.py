@@ -2,6 +2,7 @@ import numpy as np
 import itertools
 from scipy import signal
 from tqdm import tqdm
+from Pool import Pool
 
 def refine(complex_estimates, complex_mix, iterations=1, eps=None):
     """Function to apply the filter for some iterations
@@ -28,13 +29,15 @@ def refine(complex_estimates, complex_mix, iterations=1, eps=None):
     # covariance between bins for all channels
     spatial_cov = np.zeros((n_bins, n_channels, n_channels, n_sources), complex_mix.dtype)
     psd = np.zeros((n_frames, n_bins, n_sources))
-    regularization = np.sqrt(eps) * (np.tile(np.eye(n_channels, dtype=np.complex64), (1, n_bins, 1, 1)))    
+    regularization = np.sqrt(eps) * (np.tile(np.eye(n_channels, dtype=np.complex64), (1, n_bins, 1, 1)))
+
+    manager = Pool()
 
     for i in range(iterations):
 
-        for source_j in range(n_sources):
-            # compute the spatial covariance and psd for source j
-            psd[..., source_j], spatial_cov[..., source_j] = source_psd_cov(complex_estimates[..., source_j], eps)
+        # compute the spatial covariance and psd for source j
+        outputs = manager.go(source_psd_cov, [ (complex_estimates[..., source_j], eps) for source_j in range(n_sources)])        
+        for source_j in range(n_sources): psd[..., source_j], spatial_cov[..., source_j] = outputs[source_j]
 
         for frame in range(n_frames):
 

@@ -1,6 +1,7 @@
 import numpy as np
 import itertools
 from scipy import signal
+from tqdm import tqdm
 
 def refine(complex_estimates, complex_mix, iterations=1, eps=None):
     """Function to apply the filter for some iterations
@@ -239,13 +240,13 @@ def reconstruct(
     complex_sources = wiener(mag_estimates, mix_stft.astype(np.complex128), niter)
 
     estimates = {}
-    for j, name in enumerate(targets):
+    for j, name in enumerate(tqdm(targets, desc='Post-Processing')):
 
         audio = istft_obj(complex_sources[..., j].T / (frame_length / 2), boundary=boundary)
         estimates[name] = audio.T
         # estimate shape: samples, channels
 
-    return estimates    
+    return estimates
 
 class iSTFT():
 

@@ -43,10 +43,11 @@ def eval(reference_dir, estimates_dir, output_dir=None, target='vocals'):
 
     df = pd.DataFrame.from_dict(scores, orient='index')
     if output_dir is None:
-        df.to_csv('results.csv')
+        df.to_csv(f'{target}_results.csv')
     else:
-        df.to_csv(f'{output_dir}/results.csv')
+        df.to_csv(f'{output_dir}/{target}_results.csv')
 
+    print(f'Avg of {target}: {df["SDR(dB)"].mean()}')
     return scores
 
 
@@ -58,9 +59,11 @@ if __name__ == "__main__":
                         help='path to reference files directory')
     parser.add_argument('--est', type=str,
                         help='path to estimates files directory')
+    parser.add_argument('--target', type=str, default='vocals',
+                        help='target source')
     parser.add_argument('--output-dir', type=str,
                         help='path to directory to save results')
 
     args, _ = parser.parse_known_args()
 
-    scores = eval(args.ref, args.est, args.output_dir)
+    scores = eval(args.ref, args.est, args.output_dir, args.target)

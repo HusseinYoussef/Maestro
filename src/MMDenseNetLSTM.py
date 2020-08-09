@@ -484,7 +484,8 @@ class MMDenseNetLSTM:
     
     def Separate(self,
                 track, # can be track path or the track itself.
-                models_path # this should be array of 4 path, model for each stem.
+                models_path, # this should be array of 4 path, model for each stem.
+                stems # array of stem in the SAME order as in models_path
                 ):
 
         if type(track) == str: # if track is a path not real object.
@@ -516,25 +517,19 @@ class MMDenseNetLSTM:
         assert(mix_spec.shape[1] == self.frames)
         assert(mix_spec.shape[2] == self.freq_bands)
         assert(mix_spec.shape[3] == self.channels)
-
-
-        '''
-        manager = Pool()
-        spec_stems = manager.go(self.Predict, [(model, track, ) for model in models_path])
-        '''
             
         spec_stems = [self.Predict(model, [(expand_dims(flatten(mix_spec[i]),0),) for i in range(iterations)]) for model in models_path]
         # Reconstruction part.----------------------------------------------
         start_time = time.time()        
         
-        spec_stems = np.transpose(np.array(spec_stems), (1, 3, 2, 0))
+        spec_stems = np.transpose(np.array(spec_stems), (1, 2, 3, 0))
 
         track = track.T # (channel, samples)
         stft_mix = np.transpose(((STFT())(track[None,...]))[0],(2,1,0)) # the stft which is needed for reconstruction.
         estimates = reconstruction.reconstruct(
                                 mag_estimates=spec_stems,
                                 mix_stft=stft_mix,
-                                targets=["vocals", "drums", "bass", "other"], residual= residual)
+                                targets=stems, residual= residual)
         
         for stem in estimates:
             if padding>0: estimates[stem] = estimates[stem][:-padding , :] # remove padding. (samples, channels)
@@ -555,7 +550,8 @@ class MMDenseNetLSTM:
   
         if type(model) == str: # if model is a path not real object.
             if not os.path.exists(model):
-                raise NameError('Model does not exist')
+                print('Model does not exist')
+                return
             model = tf.keras.models.load_model(model)
         
         # Prediction part.----------------------------------------------
@@ -585,7 +581,7 @@ if __name__ == "__main__":
     ]
     sample_rate = 44100
     model = MMDenseNetLSTM(seconds= 3)
-    Estimates = model.Separate(mix_path, models_path)
+    Estimates = model.Separate(mix_path, models_path, ['vocals', 'drums', 'bass', 'other'])
     for stem, track in Estimates.items():
         sf.write(f'{output_directory}/{stem}.wav', track, sample_rate)
 

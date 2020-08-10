@@ -494,11 +494,13 @@ class MMDenseNetLSTM:
             track, sample_rate = utils.audio_loader(track)
             track = track.T # (samples, channels)
         
-        residual = False
+        residual = (len(models_path) != 4)
         for model in models_path:
             if not os.path.exists(model):
-                print(f'WARNING this path {model} does not exist! residual is now ACTIVATED.')
+                print(f'WARNING this path {model} does not exist!')
                 residual = True
+
+        if residual: print('residual is ACTIVATED.')
 
         wanted_frames = int(math.ceil(self.__calc_frames(len(track)) / self.frames )) * self.frames
         wanted_len = (wanted_frames - 1) * self.frame_step + self.frame_length
@@ -517,8 +519,9 @@ class MMDenseNetLSTM:
         assert(mix_spec.shape[1] == self.frames)
         assert(mix_spec.shape[2] == self.freq_bands)
         assert(mix_spec.shape[3] == self.channels)
-            
-        spec_stems = [self.Predict(model, [(expand_dims(flatten(mix_spec[i]),0),) for i in range(iterations)]) for model in models_path]
+
+        model_input = [(expand_dims(flatten(mix_spec[i]),0),) for i in range(iterations)]
+        spec_stems = [self.Predict(model, model_input) for model in models_path if os.path.exists(model)]
         # Reconstruction part.----------------------------------------------
         start_time = time.time()        
         
@@ -551,7 +554,7 @@ class MMDenseNetLSTM:
         if type(model) == str: # if model is a path not real object.
             if not os.path.exists(model):
                 print('Model does not exist')
-                return
+                return None
             model = tf.keras.models.load_model(model)
         
         # Prediction part.----------------------------------------------
@@ -575,15 +578,17 @@ if __name__ == "__main__":
     output_directory = 'D:/CMP/4th/GP/Results'
     models_path = [
         "D:/CMP/4th/GP/Test/Model/Final Models/vocals_model.keras",
-        "D:/CMP/4th/GP/Test/Model/Final Models/drums_model.keras",
-        "D:/CMP/4th/GP/Test/Model/Final Models/bass_model.keras",
-        "D:/CMP/4th/GP/Test/Model/Final Models/other_model.keras"
+        "D:/CMP/4th/GP/Test/Model/Final Models/Xdrums_model.keras",
+        "D:/CMP/4th/GP/Test/Model/Final Models/Xbass_model.keras",
+        "D:/CMP/4th/GP/Test/Model/Final Models/Xother_model.keras"
     ]
     sample_rate = 44100
     model = MMDenseNetLSTM(seconds= 3)
-    Estimates = model.Separate(mix_path, models_path, ['vocals', 'drums', 'bass', 'other'])
+    Estimates = model.Separate(mix_path, models_path, ['vocals'])
+    '''
     for stem, track in Estimates.items():
         sf.write(f'{output_directory}/{stem}.wav', track, sample_rate)
+    '''
 
     #model.Predict(model= model_path, track= mix_path, output_directory= 'D:/CMP/4th/GP/Test/', track_name= 'X')
     '''

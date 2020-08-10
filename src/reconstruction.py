@@ -35,9 +35,10 @@ def refine(complex_estimates, complex_mix, iterations=1, eps=None):
 
     for i in range(iterations):
 
-        # compute the spatial covariance and psd for source j
-        outputs = manager.go(source_psd_cov, [ (complex_estimates[..., source_j], eps) for source_j in range(n_sources)])        
-        for source_j in range(n_sources): psd[..., source_j], spatial_cov[..., source_j] = outputs[source_j]
+
+        for source_j in range(n_sources):
+            # compute the spatial covariance and psd for source j
+            psd[..., source_j], spatial_cov[..., source_j] = source_psd_cov(complex_estimates[..., source_j], eps)
 
         for frame in range(n_frames):
 

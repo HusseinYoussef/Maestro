@@ -9,9 +9,11 @@ from keras.backend import flatten, expand_dims
 from glob import glob
 import os
 import time
+import evaluation
 from tqdm import tqdm
 import reconstruction
 from Pool import Pool
+import multiprocessing as mp
 from tensorflow.keras.models import Model
 from tensorflow.keras.backend import expand_dims, squeeze, concatenate
 from tensorflow.keras.layers import InputLayer, Input
@@ -482,6 +484,9 @@ class MMDenseNetLSTM:
 
         return history, evaluation
     
+    def wrapper(self, inp):
+        return self.Predict(*inp)
+    
     def Separate(self,
                 track, # can be track path or the track itself.
                 models_path, # this should be array of 4 path, model for each stem.
@@ -521,7 +526,11 @@ class MMDenseNetLSTM:
         assert(mix_spec.shape[3] == self.channels)
 
         model_input = [(expand_dims(flatten(mix_spec[i]),0),) for i in range(iterations)]
-        spec_stems = [self.Predict(model, model_input) for model in models_path if os.path.exists(model)]
+        spec_stems = []
+        with mp.Pool(mp.cpu_count()) as p:
+            spec_stems = p.map(self.wrapper, [(model, model_input) for model in models_path if os.path.exists(model)]) 
+        #spec_stems = [self.Predict(model, model_input) for model in models_path if os.path.exists(model)]
+
         # Reconstruction part.----------------------------------------------
         start_time = time.time()        
         
@@ -532,13 +541,14 @@ class MMDenseNetLSTM:
         estimates = reconstruction.reconstruct(
                                 mag_estimates=spec_stems,
                                 mix_stft=stft_mix,
-                                targets=stems, residual= residual)
+                                targets=stems,
+                                residual= residual,
+                                boundary= False
+                                )
         
         for stem in estimates:
             if padding>0: estimates[stem] = estimates[stem][:-padding , :] # remove padding. (samples, channels)
 
-        track = track.T
-        if padding>0: track = track[:-padding, :] # remove padding. (samples, channels)
         reconstrucion_time = time.time() - start_time
         print(f'[LOG] reconstruction done. Reconstruction time: {reconstrucion_time:.3f} seconds')
 
@@ -570,25 +580,25 @@ class MMDenseNetLSTM:
 
         return full_output_stem
 
+def predict():
+    mix_path = 'D:/CMP/4th/GP/Test/Tom McKenzie - Directions/mixture.wav'
+    stems = ['vocals', 'drums', 'other']
+    models = [f'D:/CMP/4th/GP/Test/Model/Final Models/{stem}_model.keras' for stem in stems]
+    model = MMDenseNetLSTM(seconds= 3)
+    predicted_stem = model.Separate(track= mix_path, models_path= models, stems= stems)['vocals']
+    sample_rate = 44100
+    output_directory = 'D:/CMP/4th/GP/Test/Tom McKenzie - Directions/est/'
+    sf.write(f'{output_directory}/vocals.wav', predicted_stem, sample_rate)
+    #model.Predict(model= model_path, track= mix_path, output_directory= 'D:/CMP/4th/GP/Test/Tom McKenzie - Directions/est/', track_name= 'Output2')
+def evaluate():
+    evaluation.eval('D:/CMP/4th/GP/Test/Tom McKenzie - Directions/ref', 'D:/CMP/4th/GP/Test/Tom McKenzie - Directions/est',
+     'D:/CMP/4th/GP/Test/Tom McKenzie - Directions/')
 
 if __name__ == "__main__":
     
-    mix_path = 'D:/CMP/4th/GP/Test/A.wav'
-    model_path = "D:/CMP/4th/GP/Test/Model/Final Models/bass_model.keras"
-    output_directory = 'D:/CMP/4th/GP/Results'
-    models_path = [
-        "D:/CMP/4th/GP/Test/Model/Final Models/vocals_model.keras",
-        "D:/CMP/4th/GP/Test/Model/Final Models/Xdrums_model.keras",
-        "D:/CMP/4th/GP/Test/Model/Final Models/Xbass_model.keras",
-        "D:/CMP/4th/GP/Test/Model/Final Models/Xother_model.keras"
-    ]
-    sample_rate = 44100
-    model = MMDenseNetLSTM(seconds= 3)
-    Estimates = model.Separate(mix_path, models_path, ['vocals'])
-    '''
-    for stem, track in Estimates.items():
-        sf.write(f'{output_directory}/{stem}.wav', track, sample_rate)
-    '''
+    predict()
+    time.sleep(2)
+    evaluate()
 
     #model.Predict(model= model_path, track= mix_path, output_directory= 'D:/CMP/4th/GP/Test/', track_name= 'X')
     '''

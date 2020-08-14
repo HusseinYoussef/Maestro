@@ -484,13 +484,11 @@ class MMDenseNetLSTM:
 
         return history, evaluation
     
-    def wrapper(self, inp):
-        return self.Predict(*inp)
-    
     def Separate(self,
                 track, # can be track path or the track itself.
                 models_path, # this should be array of 4 path, model for each stem.
-                stems # array of stem in the SAME order as in models_path
+                stems, # array of stem in the SAME order as in models_path
+                residual = False
                 ):
 
         if type(track) == str: # if track is a path not real object.
@@ -498,14 +496,6 @@ class MMDenseNetLSTM:
                 raise NameError('Track does not exist')
             track, sample_rate = utils.audio_loader(track)
             track = track.T # (samples, channels)
-        
-        residual = (len(models_path) != 4)
-        for model in models_path:
-            if not os.path.exists(model):
-                print(f'WARNING this path {model} does not exist!')
-                residual = True
-
-        if residual: print('residual is ACTIVATED.')
 
         wanted_frames = int(math.ceil(self.__calc_frames(len(track)) / self.frames )) * self.frames
         wanted_len = (wanted_frames - 1) * self.frame_step + self.frame_length
@@ -527,9 +517,7 @@ class MMDenseNetLSTM:
 
         model_input = [(expand_dims(flatten(mix_spec[i]),0),) for i in range(iterations)]
         spec_stems = []
-        with mp.Pool(mp.cpu_count()) as p:
-            spec_stems = p.map(self.wrapper, [(model, model_input) for model in models_path if os.path.exists(model)]) 
-        #spec_stems = [self.Predict(model, model_input) for model in models_path if os.path.exists(model)]
+        spec_stems = [self.Predict(model, model_input) for model in models_path if os.path.exists(model)]
 
         # Reconstruction part.----------------------------------------------
         start_time = time.time()        
@@ -543,7 +531,8 @@ class MMDenseNetLSTM:
                                 mix_stft=stft_mix,
                                 targets=stems,
                                 residual= residual,
-                                boundary= False
+                                boundary= False,
+                                niter= 10
                                 )
         
         for stem in estimates:
@@ -581,14 +570,14 @@ class MMDenseNetLSTM:
         return full_output_stem
 
 def predict():
-    mix_path = 'D:/CMP/4th/GP/Test/Tom McKenzie - Directions/mixture.wav'
+    mix_path = 'D:/CMP/4th/GP/Test/Cheap thrills (Sia).wav'
     stems = ['vocals', 'drums', 'other']
     models = [f'D:/CMP/4th/GP/Test/Model/Final Models/{stem}_model.keras' for stem in stems]
     model = MMDenseNetLSTM(seconds= 3)
     predicted_stem = model.Separate(track= mix_path, models_path= models, stems= stems)['vocals']
     sample_rate = 44100
-    output_directory = 'D:/CMP/4th/GP/Test/Tom McKenzie - Directions/est/'
-    sf.write(f'{output_directory}/vocals.wav', predicted_stem, sample_rate)
+    output_directory = 'D:/CMP/4th/GP/Test'
+    sf.write(f'{output_directory}/vocals(sia).wav', predicted_stem, sample_rate)
     #model.Predict(model= model_path, track= mix_path, output_directory= 'D:/CMP/4th/GP/Test/Tom McKenzie - Directions/est/', track_name= 'Output2')
 def evaluate():
     evaluation.eval('D:/CMP/4th/GP/Test/Tom McKenzie - Directions/ref', 'D:/CMP/4th/GP/Test/Tom McKenzie - Directions/est',
@@ -597,8 +586,8 @@ def evaluate():
 if __name__ == "__main__":
     
     predict()
-    time.sleep(2)
-    evaluate()
+    
+    #evaluate()
 
     #model.Predict(model= model_path, track= mix_path, output_directory= 'D:/CMP/4th/GP/Test/', track_name= 'X')
     '''

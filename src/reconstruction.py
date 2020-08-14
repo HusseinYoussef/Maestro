@@ -31,8 +31,6 @@ def refine(complex_estimates, complex_mix, iterations=1, eps=None):
     psd = np.zeros((n_frames, n_bins, n_sources))
     regularization = np.sqrt(eps) * (np.tile(np.eye(n_channels, dtype=np.complex64), (1, n_bins, 1, 1)))
 
-    manager = Pool()
-
     for i in range(iterations):
 
 

@@ -496,7 +496,6 @@ class MMDenseNetLSTM:
                 raise NameError('Track does not exist')
             track, sample_rate = utils.audio_loader(track)
             track = track.T # (samples, channels)
-
         wanted_frames = int(math.ceil(self.__calc_frames(len(track)) / self.frames )) * self.frames
         wanted_len = (wanted_frames - 1) * self.frame_step + self.frame_length
 

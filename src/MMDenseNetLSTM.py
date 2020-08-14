@@ -532,7 +532,7 @@ class MMDenseNetLSTM:
                                 targets=stems,
                                 residual= residual,
                                 boundary= False,
-                                niter= 10
+                                niter= 1
                                 )
         
         for stem in estimates:

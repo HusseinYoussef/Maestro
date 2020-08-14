@@ -2,7 +2,6 @@ import argparse
 import torch
 import os
 import scipy
-import norbert
 import json
 import numpy as np
 from model import UMX
@@ -60,7 +59,7 @@ def separate(
     source_names = []
     models_out = []
 
-    for j, target in enumerate(tqdm(targets, desc='Targets')):
+    for j, target in enumerate(tqdm(targets, desc='Models')):
 
         target_model = load_model(target=target, path=models_path, name=model_name, device=device)
         # breakpoint()
@@ -88,7 +87,8 @@ def separate(
                                 targets=targets,
                                 niter=niter,
                                 frame_length=target_model.stft.frame_length,
-                                frame_step=target_model.stft.frame_step
+                                frame_step=target_model.stft.frame_step,
+                                residual=residual_model
                             )
 
     return estimates
@@ -104,7 +104,7 @@ if __name__ == "__main__":
     parser.add_argument('--model', type=str, required=True,
                         help='path to models directory')
     
-    parser.add_argument('--targets', nargs='+', default=['vocals'],
+    parser.add_argument('--targets', nargs='+', default=['vocals', 'drums', 'bass', 'other'],
                         help='targets to output')
 
     parser.add_argument('--name', type=str, default='try5',

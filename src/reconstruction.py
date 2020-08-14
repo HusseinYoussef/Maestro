@@ -1,6 +1,8 @@
 import numpy as np
 import itertools
 from scipy import signal
+from tqdm import tqdm
+from Pool import Pool
 
 def refine(complex_estimates, complex_mix, iterations=1, eps=None):
     """Function to apply the filter for some iterations
@@ -27,9 +29,10 @@ def refine(complex_estimates, complex_mix, iterations=1, eps=None):
     # covariance between bins for all channels
     spatial_cov = np.zeros((n_bins, n_channels, n_channels, n_sources), complex_mix.dtype)
     psd = np.zeros((n_frames, n_bins, n_sources))
-    regularization = np.sqrt(eps) * (np.tile(np.eye(n_channels, dtype=np.complex64), (1, n_bins, 1, 1)))    
+    regularization = np.sqrt(eps) * (np.tile(np.eye(n_channels, dtype=np.complex64), (1, n_bins, 1, 1)))
 
     for i in range(iterations):
+
 
         for source_j in range(n_sources):
             # compute the spatial covariance and psd for source j
@@ -239,13 +242,13 @@ def reconstruct(
     complex_sources = wiener(mag_estimates, mix_stft.astype(np.complex128), niter)
 
     estimates = {}
-    for j, name in enumerate(targets):
+    for j, name in enumerate(tqdm(targets, desc='Post-Processing')):
 
         audio = istft_obj(complex_sources[..., j].T / (frame_length / 2), boundary=boundary)
         estimates[name] = audio.T
         # estimate shape: samples, channels
 
-    return estimates    
+    return estimates
 
 class iSTFT():
 

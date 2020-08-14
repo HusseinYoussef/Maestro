@@ -1,6 +1,6 @@
 import tensorflow as tf
 import numpy as np 
-import pathos.multiprocessing as mp
+from functools import reduce
 import math
 import utils
 import soundfile as sf
@@ -9,8 +9,11 @@ from keras.backend import flatten, expand_dims
 from glob import glob
 import os
 import time
+import evaluation
 from tqdm import tqdm
 import reconstruction
+from Pool import Pool
+import multiprocessing as mp
 from tensorflow.keras.models import Model
 from tensorflow.keras.backend import expand_dims, squeeze, concatenate
 from tensorflow.keras.layers import InputLayer, Input
@@ -18,9 +21,13 @@ from tensorflow.keras.layers import Reshape, MaxPooling2D, BatchNormalization
 from tensorflow.keras.layers import Conv2D, Dense, Flatten
 from tensorflow.keras.layers import ReLU, AveragePooling2D, Conv2DTranspose
 
-
 def draw(mat, title):
     utils.pretty_spectrogram(np.transpose(mat, (2,1,0)), title= title)
+
+'''
+def run(queue, idx, model, matrix):
+    queue.put((idx, model.predict(matrix)[0]))
+'''
 
 class MMDenseNetLSTM:
 
@@ -335,12 +342,16 @@ class MMDenseNetLSTM:
         # densenet outputs
         outputs_band1 = self.__densenet_band1(band1_inp,log= log)
         print("Band1 Done.")
+
         outputs_band2 = self.__densenet_band2(band2_inp,log = log)
         print("Band2 Done.")
+
         outputs_band3 = self.__densenet_band3(band3_inp,log = log)
         print("Band3 Done.")
+
         outputs_full = self.__densenet_full(full_band_inp,log = log)
         print("Full Band Done.")
+        
         # concat outputs along frequency axis
         outputs = concatenate([outputs_band1, outputs_band2, outputs_band3], axis=2)
         if log: print(outputs)
@@ -348,13 +359,16 @@ class MMDenseNetLSTM:
         outputs = concatenate([outputs, outputs_full], axis=3)
         if log: print(outputs)
         # last conv to adjust channels
-        outputs = Conv2D(filters=2, kernel_size=[1, 2], padding='same')(outputs)
+        outputs = Conv2D(filters=2, kernel_size=[1, 2], padding='same')(outputs) # Now outputs = the filter that should be applied.
+
+        outputs = ReLU()(outputs) * net
+        
         if log: print(outputs)
         
         #outputs = concatenate([outputs, net[:, :, -1: ,:]], axis=2)  I think this is useless line.
 
         model = Model(inputs=inputs, outputs=outputs)
-        model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mse'])
+        model.compile(optimizer='adam', loss='mse', metrics=['mse'])
         print('Model Compilation Done.')
         if summary : model.summary()
 
@@ -442,7 +456,7 @@ class MMDenseNetLSTM:
         # Initialize Callbacks:
         mc = tf.keras.callbacks.ModelCheckpoint(filepath=f'{model_directory}/model.keras', monitor='val_mse', mode='min', verbose=1, save_best_only=True)
         mp = tf.keras.callbacks.TensorBoard(log_dir=logs_path, histogram_freq=0, embeddings_freq=0, update_freq="epoch")
-        sp = tf.keras.callbacks.EarlyStopping(monitor='val_mse', patience=10)
+        sp = tf.keras.callbacks.EarlyStopping(monitor='val_mse', patience=patience)
         initial_epoch = init_epochs
 
         model = tf.keras.models.load_model(model_directory) if resume else self.build()
@@ -469,84 +483,112 @@ class MMDenseNetLSTM:
             evaluation = self.Evaluate(f'{model_directory}/model.keras', test_X_path, test_Y_path, batch_size)
 
         return history, evaluation
-
-    def Predict(self, model, # can be the model itself or model path.
-            track, # can be the track itself (samples, channels) or track path.
-            output_directory= None, track_name= None):
-
-        ''' this function takes a track whatever its length and then predict its stem in the output_directory '''
-  
-        if type(model) == str: # if model is a path not real object.
-            if not os.path.exists(model):
-                raise NameError('Model does not exist')
-            model = tf.keras.models.load_model(model)
+    
+    def Separate(self,
+                track, # can be track path or the track itself.
+                models_path, # this should be array of 4 path, model for each stem.
+                stems, # array of stem in the SAME order as in models_path
+                residual = False
+                ):
 
         if type(track) == str: # if track is a path not real object.
             if not os.path.exists(track):
                 raise NameError('Track does not exist')
             track, sample_rate = utils.audio_loader(track)
             track = track.T # (samples, channels)
-        
-        # TODO check if the track is stereo or mono.
         wanted_frames = int(math.ceil(self.__calc_frames(len(track)) / self.frames )) * self.frames
         wanted_len = (wanted_frames - 1) * self.frame_step + self.frame_length
 
         assert(self.__calc_frames(wanted_len) == wanted_frames)
-
+        
         padding = wanted_len - len(track)
-        track = np.append(track,padding*[[0,0]], axis=0)
+        if padding > 0: track = np.append(track,padding*[[0,0]], axis=0)
 
         assert(len(track) == wanted_len)
         
         mix_spec = self.__prepare(track.T)
-        iterations = self.__calc_frames(len(track)) // self.frames
+        iterations = self.__calc_frames(len(track)) // self.frames 
         mix_spec = np.reshape(mix_spec, ( mix_spec.shape[0] // self.frames, self.frames, mix_spec.shape[1], mix_spec.shape[2]) )
 
         assert(mix_spec.shape[1] == self.frames)
         assert(mix_spec.shape[2] == self.freq_bands)
         assert(mix_spec.shape[3] == self.channels)
 
+        model_input = [(expand_dims(flatten(mix_spec[i]),0),) for i in range(iterations)]
+        spec_stems = []
+        spec_stems = [self.Predict(model, model_input) for model in models_path if os.path.exists(model)]
+
+        # Reconstruction part.----------------------------------------------
+        start_time = time.time()        
+        
+        spec_stems = np.transpose(np.array(spec_stems), (1, 2, 3, 0))
+
+        track = track.T # (channel, samples)
+        stft_mix = np.transpose(((STFT())(track[None,...]))[0],(2,1,0)) # the stft which is needed for reconstruction.
+        estimates = reconstruction.reconstruct(
+                                mag_estimates=spec_stems,
+                                mix_stft=stft_mix,
+                                targets=stems,
+                                residual= residual,
+                                boundary= False,
+                                niter= 10
+                                )
+        
+        for stem in estimates:
+            if padding>0: estimates[stem] = estimates[stem][:-padding , :] # remove padding. (samples, channels)
+
+        reconstrucion_time = time.time() - start_time
+        print(f'[LOG] reconstruction done. Reconstruction time: {reconstrucion_time:.3f} seconds')
+
+        return estimates
+        
+
+    def Predict(self, model, # can be the model itself or model path.
+            spectrograms, # spectrograms that are generated from the given track.
+            output_directory= None, track_name= None):
+
+        ''' this function takes a series of spectrograms and then predict them in parallel then returns a concatenated spectrograms'''
+  
+        if type(model) == str: # if model is a path not real object.
+            if not os.path.exists(model):
+                print('Model does not exist')
+                return None
+            model = tf.keras.models.load_model(model)
+        
         # Prediction part.----------------------------------------------
         start_time = time.time()
 
-        full_output_stem = None
-        for i in range(iterations):
-
-            output = model.predict(expand_dims(flatten(mix_spec[i]),0))[0]
-            full_output_stem = np.concatenate([full_output_stem,output],axis=0) if i>0 else output
-
+        manager = Pool()
+        outputs = manager.go(model.predict, spectrograms)
+        outputs = [outputs[i][0] for i in range(len(spectrograms))]
+        full_output_stem = reduce(lambda a, b: np.concatenate([a, b], axis = 0), outputs)
+        
         prediction_time = time.time() - start_time
+        print(f'[LOG] prediction done. Prediction time: {prediction_time:.3f} seconds')
 
-        # Reconstruction part.----------------------------------------------
-        start_time = time.time()
-        track = track.T # (channel, samples)
-        stft_mix = np.transpose(((STFT())(track[None,...]))[0],(2,1,0)) # the stft which is needed for reconstruction.
-        
-        predicted_stem = reconstruction.reconstruct( np.expand_dims(full_output_stem, axis= -1), stft_mix, ['drums'], boundary= False)['drums']
-        predicted_stem = predicted_stem[:-padding , :] # remove padding. (samples, channels)
+        return full_output_stem
 
-        track = track.T
-        track = track[:-padding, :] # remove padding. (samples, channels)
-        reconstrucion_time = time.time() - start_time
-
-        print(f'[LOG] process is done with prediction time: {prediction_time:.3f} seconds and reconstruction time: {reconstrucion_time:.3f} seconds')
-        if output_directory != None and track_name != None:
-
-            sf.write(f'{output_directory}/{track_name}[stem].wav', predicted_stem, self.sample_rate)
-            sf.write(f'{output_directory}/{track_name}[mix].wav', track, self.sample_rate)
-            #utils.convert_to_mp3(f'{output_directory}/{track_name}[stem].wav', f'{output_directory}/{track_name}[stem].mp3')
-            #utils.convert_to_mp3(f'{output_directory}/{track_name}[mix].wav', f'{output_directory}/{track_name}[mix].mp3')
-
-            print('writing done.')
-        
-        return predicted_stem
+def predict():
+    mix_path = 'D:/CMP/4th/GP/Test/Cheap thrills (Sia).wav'
+    stems = ['vocals', 'drums', 'other']
+    models = [f'D:/CMP/4th/GP/Test/Model/Final Models/{stem}_model.keras' for stem in stems]
+    model = MMDenseNetLSTM(seconds= 3)
+    predicted_stem = model.Separate(track= mix_path, models_path= models, stems= stems)['vocals']
+    sample_rate = 44100
+    output_directory = 'D:/CMP/4th/GP/Test'
+    sf.write(f'{output_directory}/vocals(sia).wav', predicted_stem, sample_rate)
+    #model.Predict(model= model_path, track= mix_path, output_directory= 'D:/CMP/4th/GP/Test/Tom McKenzie - Directions/est/', track_name= 'Output2')
+def evaluate():
+    evaluation.eval('D:/CMP/4th/GP/Test/Tom McKenzie - Directions/ref', 'D:/CMP/4th/GP/Test/Tom McKenzie - Directions/est',
+     'D:/CMP/4th/GP/Test/Tom McKenzie - Directions/')
 
 if __name__ == "__main__":
     
-    mix_path = 'D:/CMP/4th/GP/Test/Buitraker - Revo X/mixture.wav'
-    model_path = 'D:/CMP/4th/GP/Test/Model/model.keras'
-    model = MMDenseNetLSTM(seconds= 3)
-    model.Predict(model= model_path, track= mix_path, output_directory= 'D:/CMP/4th/GP/Test/', track_name= 'Buitraker - Revo X')
+    predict()
+    
+    #evaluate()
+
+    #model.Predict(model= model_path, track= mix_path, output_directory= 'D:/CMP/4th/GP/Test/', track_name= 'X')
     '''
     sample_rate = 44100
     bands = [0, 385, 1025, 2049]
@@ -555,11 +597,5 @@ if __name__ == "__main__":
     model = MMDenseNetLSTM()
     model.build(2049, 5000, 2, bands,log= True)
     '''
-    
-    
-     
-
-
-    print("Hi")
     
     
